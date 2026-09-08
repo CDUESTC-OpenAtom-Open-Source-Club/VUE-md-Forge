@@ -1,30 +1,51 @@
 <script setup lang="ts">
 /**
- * EditorOnly — dual-pane editor for the v0.2 milestone.
+ * EditorOnly — dual-pane editor with luogu-dev/markdown-palettes toolbar.
  *
- * Layout:
- *   ┌── toolbar ────────────────────────────────────────────────────┐
- *   │ H1 H2 H3 │ B I S │ link img code quote list 1. formula │ 沉浸│
- *   ├── gutter ──┬── textarea + pre overlay ──┬── preview ────────┤
- *   │  1  2  3   │  source markdown (coloured) │  rendered HTML    │
- *   │  4  5  6   │  with transparent text      │                   │
- *   ├── status bar ────────────────────────────────────────────────┤
- *   │ chars · lines · 🟢 1.85ms · F9 沉浸                          │
- *   └──────────────────────────────────────────────────────────────┘
+ * Toolbar button order, icons and behaviour mirror markdown-palettes
+ * (https://github.com/luogu-dev/markdown-palettes) `defaultBtns`:
  *
- * Key features:
+ *   bold · strikethrough · italic · hr
+ *   ─── H1 · H2 · H3 · H4 · H5 · H6 ───
+ *   ul · ol
+ *   ─── img · link · code · table ───
+ *   hide · fullScreen · scrollSync
+ *   ─── info
+ *
+ * Icons come from @fortawesome/free-solid-svg-icons; head levels H1..H6
+ * render as a character glyph inside a .eo-btn-glyph to match upstream's
+ * `content: 'H'+level` styling.
+ *
+ * Other features preserved from earlier milestones:
  *   - JetBrains Mono source pane with token highlighting
  *   - Line-number gutter (42px)
  *   - Percentage-based two-way scroll sync (syncing flag prevents loops)
- *   - View modes: dual (default), edit-only, preview-only
- *   - F9 fullscreen (browser API); 仅编辑 / 仅预览 are CSS-only
- *   - Help modal with keyboard shortcut reference
- *   - Shortcuts: Ctrl+B / I / K / 1/2/3 / 0 / S
+ *   - F9 fullscreen (browser API) is replaced by the toolbar's fullScreen button
+ *   - localStorage draft persistence
  *   - Image paste/drop → mock base64 upload → inline ![]() replacement
- *   - Draft persisted to localStorage
- *   - Toast for paste result
  */
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import {
+  faBold,
+  faStrikethrough,
+  faItalic,
+  faMinus,
+  faListUl,
+  faListOl,
+  faImage,
+  faLink,
+  faCode,
+  faTable,
+  faEye,
+  faEyeSlash,
+  faExpandArrowsAlt,
+  faLock,
+  faLockOpen,
+  faInfoCircle,
+  faSun,
+  faMoon
+} from '@fortawesome/free-solid-svg-icons';
 import { MarkdownEngine } from '@/core/MarkdownEngine';
 import { PairCompleter } from '@/core/PairCompleter';
 import { highlightMarkdown } from '@/core/highlight';
@@ -87,7 +108,7 @@ function setTheme(next: 'typora-light' | 'typora-dark') {
 function toggleTheme() {
   setTheme(themeRef.value === 'typora-light' ? 'typora-dark' : 'typora-light');
 }
-const showOverlay = ref(true);
+
 const renderMs = ref(0);
 const toast = ref<{ id: number; text: string; tone: 'ok' | 'warn' | 'info' } | null>(null);
 const isPulsing = ref(false);
@@ -152,16 +173,20 @@ function onBeforeInput(e: Event) {
 }
 
 // ── two-way scroll sync (percentage based, syncing flag) ──────────────
+const scrollSyncEnabled = ref<boolean>(
+  (localStorage.getItem('mdf-editor-only:scroll-sync') as string | null) !== 'off'
+);
+watch(scrollSyncEnabled, (v) => localStorage.setItem('mdf-editor-only:scroll-sync', v ? 'on' : 'off'));
+
 let syncing = false;
 function onSourceScroll() {
   const ta = textareaRef.value;
   const ov = overlayRef.value;
   const pv = previewRef.value;
   if (!ta || !ov || !pv) return;
-  // Lock overlay to textarea scroll.
   ov.scrollTop = ta.scrollTop;
   ov.scrollLeft = ta.scrollLeft;
-  // Push percentage to preview.
+  if (!scrollSyncEnabled.value) return;
   if (syncing) {
     syncing = false;
     return;
@@ -177,6 +202,7 @@ function onPreviewScroll() {
   const ta = textareaRef.value;
   const pv = previewRef.value;
   if (!ta || !pv) return;
+  if (!scrollSyncEnabled.value) return;
   if (syncing) {
     syncing = false;
     return;
@@ -199,46 +225,29 @@ function runOnTextarea(fn: (el: HTMLTextAreaElement) => void) {
   scheduleSave();
 }
 
-function doWrap(before: string, after: string, placeholder = '') {
-  runOnTextarea((el) => wrapSelection(el, before, after, placeholder));
+function doBold() {
+  runOnTextarea((el) => wrapSelection(el, '**', '**', '粗体'));
 }
-function doHeading(level: 1 | 2 | 3) {
-  runOnTextarea((el) => toggleLinePrefix(el, '#'.repeat(level) + ' '));
+function doItalic() {
+  runOnTextarea((el) => wrapSelection(el, '*', '*', '斜体'));
 }
-function doBold() { doWrap('**', '**', '粗体'); }
-function doItalic() { doWrap('*', '*', '斜体'); }
-function doStrike() { doWrap('~~', '~~', '删除'); }
-function doCode() {
-  runOnTextarea((el) => {
-    const sel = el.value.slice(el.selectionStart, el.selectionEnd);
-    if (sel.includes('\n') || sel.length === 0) {
-      // Multi-line or empty → block code.
-      insertText(el, '\n```\n' + (sel || 'code') + '\n```\n');
-    } else {
-      // Single-line → inline code.
-      wrapSelection(el, '`', '`', 'code');
-    }
-  });
-}
-function doQuote() { runOnTextarea((el) => toggleLinePrefix(el, '> ')); }
-function doUl() { runOnTextarea((el) => toggleLinePrefix(el, '- ')); }
-function doOl() { runOnTextarea((el) => toggleLinePrefix(el, '1. ')); }
-function doTaskList() {
-  runOnTextarea((el) => toggleLinePrefix(el, '- [ ] '));
-}
-function doLink() { runOnTextarea(insertLink); }
-function doImage() {
-  runOnTextarea(insertImagePrompt);
-}
-function doFormula() {
-  runOnTextarea((el) => {
-    const sel = el.value.slice(el.selectionStart, el.selectionEnd) || 'E = mc^2';
-    insertText(el, `$${sel}$`);
-  });
+function doStrike() {
+  runOnTextarea((el) => wrapSelection(el, '~~', '~~', '删除'));
 }
 function doHr() {
   runOnTextarea((el) => {
     insertText(el, '\n\n---\n\n');
+  });
+}
+function doLink() {
+  runOnTextarea(insertLink);
+}
+function doImage() {
+  runOnTextarea(insertImagePrompt);
+}
+function doCode() {
+  runOnTextarea((el) => {
+    insertText(el, '\n\n```\ncode\n```\n\n');
   });
 }
 function doTable() {
@@ -246,58 +255,41 @@ function doTable() {
     insertText(el, '\n\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| A1 | A2 | A3 |\n| B1 | B2 | B3 |\n\n');
   });
 }
-// Promote: H3 → H2 → H1 → remove prefix. Demote: H0 (no heading) → H1 → ... → H6.
-function doPromoteHeading() {
-  runOnTextarea((el) => {
-    const pos = el.selectionStart;
-    const lineStart = el.value.lastIndexOf('\n', pos - 1) + 1;
-    const line = el.value.slice(lineStart).split('\n', 1)[0];
-    const m = /^(#{1,6})\s/.exec(line);
-    if (!m) return;
-    const hashes = m[1];
-    if (hashes.length === 1) {
-      // Remove the H1 prefix entirely.
-      const replaced = line.replace(/^#\s/, '');
-      el.value = el.value.slice(0, lineStart) + replaced + el.value.slice(lineStart + line.length);
-    } else {
-      const replaced = '#'.repeat(hashes.length - 1) + ' ' + line.slice(hashes.length + 1);
-      el.value = el.value.slice(0, lineStart) + replaced + el.value.slice(lineStart + line.length);
-    }
-    el.setSelectionRange(lineStart, lineStart);
-  });
+function doUl() {
+  runOnTextarea((el) => toggleLinePrefix(el, '- '));
 }
-function doDemoteHeading() {
+function doOl() {
+  runOnTextarea((el) => toggleLinePrefix(el, '1. '));
+}
+
+// Apply a heading level to the cursor line. Mirrors markdown-palettes
+// btn-header.js: strips any existing `#` prefix up to 7 chars, then prepends
+// `#{level} `. If `level` equals the line's current level, toggle it off.
+function doHeading(level: 1 | 2 | 3 | 4 | 5 | 6) {
   runOnTextarea((el) => {
     const pos = el.selectionStart;
     const lineStart = el.value.lastIndexOf('\n', pos - 1) + 1;
     const line = el.value.slice(lineStart).split('\n', 1)[0];
-    const m = /^(#{1,6})\s/.exec(line);
+    const m = /^(#{1,6}) /.exec(line);
+    const currentLevel = m ? m[1].length : 0;
     let replaced: string;
-    if (!m) {
-      replaced = '# ' + line;
-    } else if (m[1].length >= 6) {
-      return; // already H6, no further demote
+    if (currentLevel === level) {
+      replaced = line.replace(/^#{1,6} /, '');
     } else {
-      replaced = '#'.repeat(m[1].length + 1) + ' ' + line.slice(m[1].length + 1);
+      replaced = '#'.repeat(level) + ' ' + (m ? line.slice(m[1].length + 1) : line);
     }
     el.value = el.value.slice(0, lineStart) + replaced + el.value.slice(lineStart + line.length);
-    el.setSelectionRange(lineStart, lineStart);
+    el.setSelectionRange(lineStart + replaced.length, lineStart + replaced.length);
   });
 }
-function scrollToTop() {
-  const ta = textareaRef.value;
-  ta?.scrollTo({ top: 0 });
+
+// ── view mode: hide / show preview (luogu markdown-palettes semantics) ─
+type ViewMode = 'normal' | 'hide' | 'full';
+const viewMode = ref<ViewMode>('normal');
+function togglePreviewHidden() {
+  viewMode.value = viewMode.value === 'hide' ? 'normal' : 'hide';
 }
 
-// ── view mode (仅编辑 / 仅预览 / 全屏 / 双栏) ──────────────────────
-type ViewMode = 'dual' | 'edit' | 'preview';
-const view = ref<ViewMode>((localStorage.getItem('mdf-editor-only:view') as ViewMode) || 'dual');
-watch(view, (v) => localStorage.setItem('mdf-editor-only:view', v));
-function setView(mode: ViewMode) {
-  view.value = mode;
-}
-
-// F9 / 全屏 button — request real browser fullscreen on the editor root.
 async function toggleFullscreen() {
   const root = (textareaRef.value?.closest('.editor-only') as HTMLElement | null);
   if (!root) return;
@@ -307,17 +299,23 @@ async function toggleFullscreen() {
     } else {
       await document.exitFullscreen();
     }
-  } catch (err) {
+  } catch {
     flashToast('浏览器拒绝了全屏请求', 'warn');
   }
 }
 
-// ── help modal ────────────────────────────────────────────────────────────
-const showHelp = ref(false);
-function openHelp() { showHelp.value = true; }
-function closeHelp() { showHelp.value = false; }
-function onHelpKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeHelp();
+// ── info modal (about) ────────────────────────────────────────────────
+const showInfo = ref(false);
+function openInfo() {
+  showInfo.value = true;
+}
+function closeInfo() {
+  showInfo.value = false;
+}
+
+function scrollToTop() {
+  const ta = textareaRef.value;
+  ta?.scrollTo({ top: 0 });
 }
 
 // ── keyboard shortcuts ────────────────────────────────────────────────
@@ -327,21 +325,12 @@ function onKeydown(e: KeyboardEvent) {
   if (k === 'b') { e.preventDefault(); doBold(); }
   else if (k === 'i') { e.preventDefault(); doItalic(); }
   else if (k === 'k') { e.preventDefault(); doLink(); }
-  else if (k === '1') { e.preventDefault(); doHeading(1); }
-  else if (k === '2') { e.preventDefault(); doHeading(2); }
-  else if (k === '3') { e.preventDefault(); doHeading(3); }
-  else if (k === '0') { e.preventDefault(); doHeading(1); /* fallback */ }
   else if (k === 's') { e.preventDefault(); scheduleSave(); flashToast('已保存', 'ok'); }
-  else if (k === '/') { e.preventDefault(); openHelp(); }
 }
 function onGlobalKeydown(e: KeyboardEvent) {
-  if (e.key === 'F9') {
+  if (e.key === 'Escape' && showInfo.value) {
     e.preventDefault();
-    toggleFullscreen();
-  }
-  if (e.key === 'Escape' && showHelp.value) {
-    e.preventDefault();
-    closeHelp();
+    closeInfo();
   }
 }
 
@@ -418,95 +407,78 @@ defineExpose({ scrollToTop });
 </script>
 
 <template>
-  <div class="editor-only" :data-mdf-theme="themeRef" :data-mdf-view="view">
-    <!-- toolbar -->
+  <div class="editor-only" :data-mdf-theme="themeRef" :data-mdf-view="viewMode">
+    <!-- toolbar — mirrors luogu-dev/markdown-palettes defaultBtns -->
     <header class="eo-toolbar">
-      <div class="eo-group eo-group--heading">
-        <button @click="doPromoteHeading" title="标题提升一级（H6 → H1）" aria-label="标题提升一级">
-          <span class="eo-btn-label">H<sub>0</sub></span>
-        </button>
-        <button @click="doDemoteHeading" title="标题降低一级（H0 → H6）" aria-label="标题降低一级">
-          <span class="eo-btn-label">H<sub>6</sub></span>
-        </button>
-      </div>
-      <div class="eo-sep" />
-      <div class="eo-group">
-        <button @click="doHr" title="水平线" aria-label="水平线"><span class="eo-btn-glyph">—</span></button>
-      </div>
-      <div class="eo-sep" />
-      <div class="eo-group">
-        <button @click="doBold" title="粗体 Ctrl+B"><strong>B</strong></button>
-        <button @click="doItalic" title="斜体 Ctrl+I"><em>I</em></button>
-        <button @click="doStrike" title="删除线"><s>S</s></button>
-      </div>
-      <div class="eo-sep" />
-      <div class="eo-group">
-        <button @click="doFormula" title="数学公式（行内 $...$ / 块级 $$...$$）" aria-label="数学公式">
-          <span class="eo-btn-glyph">√<span class="eo-btn-sub">x</span></span>
-        </button>
-      </div>
-      <div class="eo-sep" />
-      <div class="eo-group">
-        <button @click="doLink" title="链接 Ctrl+K" aria-label="链接">
-          <span class="eo-btn-glyph">@</span>
-        </button>
-        <button @click="doImage" title="图片" aria-label="图片">
-          <span class="eo-btn-glyph">🖼</span>
-        </button>
-        <button @click="doCode" title="代码（行内 ` / 块 ```）" aria-label="代码">
-          <span class="eo-btn-glyph">&lt;/&gt;</span>
-        </button>
-        <button @click="doTable" title="表格" aria-label="表格">
-          <span class="eo-btn-glyph">▦</span>
-        </button>
-        <button @click="doQuote" title="引用" aria-label="引用">
-          <span class="eo-btn-glyph">❝</span>
-        </button>
-        <button @click="doUl" title="无序列表" aria-label="无序列表">
-          <span class="eo-btn-glyph">≡</span>
-        </button>
-        <button @click="doOl" title="有序列表" aria-label="有序列表">
-          <span class="eo-btn-glyph">1.≡</span>
-        </button>
-        <button @click="doTaskList" title="任务列表" aria-label="任务列表">
-          <span class="eo-btn-glyph">☑</span>
-        </button>
-      </div>
-      <div class="eo-spacer" />
-      <div class="eo-group eo-group--view">
-        <button
-          :class="{ active: view === 'edit' }"
-          @click="setView(view === 'edit' ? 'dual' : 'edit')"
-          title="仅编辑"
-          aria-label="仅编辑"
-        >
-          <span class="eo-btn-glyph">‖</span>
-        </button>
-        <button
-          :class="{ active: view === 'preview' }"
-          @click="setView(view === 'preview' ? 'dual' : 'preview')"
-          title="仅预览"
-          aria-label="仅预览"
-        >
-          <span class="eo-btn-glyph">◫</span>
-        </button>
-        <button @click="toggleFullscreen" title="全屏 F9" aria-label="全屏">
-          <span class="eo-btn-glyph">⛶</span>
-        </button>
-        <div class="eo-sep" />
-        <button @click="toggleTheme" :title="`当前主题: ${themeRef}，点击切换`">
-          {{ themeRef === 'typora-light' ? '☀' : '☾' }}
-        </button>
-        <button @click="openHelp" title="帮助 Ctrl+/" aria-label="帮助">
-          <span class="eo-btn-glyph">?</span>
-        </button>
-      </div>
+      <button @click="doBold" title="粗体 Ctrl+B" aria-label="粗体">
+        <FontAwesomeIcon :icon="faBold" />
+      </button>
+      <button @click="doStrike" title="删除线" aria-label="删除线">
+        <FontAwesomeIcon :icon="faStrikethrough" />
+      </button>
+      <button @click="doItalic" title="斜体 Ctrl+I" aria-label="斜体">
+        <FontAwesomeIcon :icon="faItalic" />
+      </button>
+      <button @click="doHr" title="水平线" aria-label="水平线">
+        <FontAwesomeIcon :icon="faMinus" />
+      </button>
+
+      <span class="eo-sep" />
+
+      <button v-for="lv in 6" :key="`h${lv}`" @click="doHeading(lv as 1|2|3|4|5|6)" :title="`${lv} 级标题`" :aria-label="`${lv} 级标题`">
+        <span class="eo-btn-glyph">H{{ lv }}</span>
+      </button>
+
+      <span class="eo-sep" />
+
+      <button @click="doUl" title="无序列表" aria-label="无序列表">
+        <FontAwesomeIcon :icon="faListUl" />
+      </button>
+      <button @click="doOl" title="有序列表" aria-label="有序列表">
+        <FontAwesomeIcon :icon="faListOl" />
+      </button>
+
+      <span class="eo-sep" />
+
+      <button @click="doImage" title="图片" aria-label="图片">
+        <FontAwesomeIcon :icon="faImage" />
+      </button>
+      <button @click="doLink" title="链接 Ctrl+K" aria-label="链接">
+        <FontAwesomeIcon :icon="faLink" />
+      </button>
+      <button @click="doCode" title="代码块" aria-label="代码块">
+        <FontAwesomeIcon :icon="faCode" />
+      </button>
+      <button @click="doTable" title="表格" aria-label="表格">
+        <FontAwesomeIcon :icon="faTable" />
+      </button>
+
+      <span class="eo-sep" />
+
+      <button @click="togglePreviewHidden" :title="viewMode === 'hide' ? '显示预览' : '隐藏预览'" aria-label="切换预览">
+        <FontAwesomeIcon :icon="viewMode === 'hide' ? faEye : faEyeSlash" />
+      </button>
+      <button @click="toggleFullscreen" title="全屏" aria-label="全屏">
+        <FontAwesomeIcon :icon="faExpandArrowsAlt" />
+      </button>
+      <button @click="scrollSyncEnabled = !scrollSyncEnabled" :title="scrollSyncEnabled ? '关闭滚动同步' : '开启滚动同步'" aria-label="切换滚动同步">
+        <FontAwesomeIcon :icon="scrollSyncEnabled ? faLock : faLockOpen" />
+      </button>
+
+      <span class="eo-sep" />
+
+      <button @click="toggleTheme" :title="`当前主题: ${themeRef}，点击切换`">
+        <FontAwesomeIcon :icon="themeRef === 'typora-light' ? faSun : faMoon" />
+      </button>
+      <button @click="openInfo" title="关于" aria-label="关于">
+        <FontAwesomeIcon :icon="faInfoCircle" />
+      </button>
     </header>
 
     <!-- editor body -->
     <main class="eo-body" @drop="onDrop" @dragover.prevent>
       <!-- source pane -->
-      <section class="eo-source">
+      <section class="eo-source" v-show="viewMode !== 'full'">
         <div class="eo-gutter" aria-hidden="true">
           <div v-for="n in lineNumbers" :key="n" class="eo-line-no">{{ n }}</div>
         </div>
@@ -514,7 +486,6 @@ defineExpose({ scrollToTop });
           <pre
             ref="overlayRef"
             class="eo-overlay"
-            :class="{ hidden: !showOverlay }"
             v-html="highlighted"
           />
           <textarea
@@ -522,7 +493,7 @@ defineExpose({ scrollToTop });
             class="eo-textarea"
             :value="content"
             spellcheck="false"
-            placeholder="在这里输入 Markdown…（F9 全屏 / Ctrl+B I K 1 2 3 / Ctrl+/ 帮助）"
+            placeholder="在这里输入 Markdown…（Ctrl+B I K，粗体 / 斜体 / 链接）"
             @beforeinput="onBeforeInput"
             @keydown="onKeydown"
             @input="(e) => { content = (e.target as HTMLTextAreaElement).value; scheduleSave(); }"
@@ -533,7 +504,7 @@ defineExpose({ scrollToTop });
       </section>
 
       <!-- preview pane -->
-      <section ref="previewRef" class="eo-preview" @scroll="onPreviewScroll">
+      <section ref="previewRef" class="eo-preview" :class="{ 'eo-preview--hidden': viewMode === 'hide' }" @scroll="onPreviewScroll">
         <div class="eo-rendered" v-html="renderedHtml" />
       </section>
     </main>
@@ -552,47 +523,27 @@ defineExpose({ scrollToTop });
       <span class="eo-spacer" />
       <button class="eo-link" @click="scrollToTop" title="回到顶部">回到顶部 ↑</button>
       <span class="eo-sep-dot">·</span>
-      <span class="eo-tip">F9 全屏</span>
+      <span class="eo-tip">{{ scrollSyncEnabled ? '滚动同步 开' : '滚动同步 关' }}</span>
     </footer>
 
-    <!-- help modal -->
+    <!-- info modal -->
     <Transition name="eo-fade">
-      <div v-if="showHelp" class="eo-help-mask" @click.self="closeHelp" @keydown="onHelpKeydown">
-        <div class="eo-help" role="dialog" aria-modal="true" aria-label="帮助">
-          <header class="eo-help-head">
-            <strong>VUE-md-Forge 帮助</strong>
-            <button class="eo-help-close" @click="closeHelp" aria-label="关闭">✕</button>
+      <div v-if="showInfo" class="eo-info-mask" @click.self="closeInfo">
+        <div class="eo-info" role="dialog" aria-modal="true" aria-label="关于">
+          <header class="eo-info-head">
+            <strong>VUE-md-Forge</strong>
+            <button class="eo-info-close" @click="closeInfo" aria-label="关闭">✕</button>
           </header>
-          <div class="eo-help-body">
-            <section>
-              <h3>键盘快捷键</h3>
-              <table class="eo-help-table">
-                <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>粗体</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>斜体</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>链接</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>H1 / H2 / H3</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>立即保存草稿</td></tr>
-                <tr><td><kbd>F9</kbd></td><td>浏览器全屏</td></tr>
-                <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>打开 / 关闭本帮助</td></tr>
-                <tr><td><kbd>Esc</kbd></td><td>关闭弹层</td></tr>
-              </table>
-            </section>
-            <section>
-              <h3>字符自动配对</h3>
-              <p>输入 <code>(</code> <code>[</code> <code>{</code> <code>"</code> <code>'</code>
-                <code>\`</code> <code>*</code> <code>_</code> <code>~</code> 会自动闭合光标；
-                选区非空时直接包裹；再按一次同字符会跳过闭合。</p>
-            </section>
-            <section>
-              <h3>图片粘贴</h3>
-              <p>从剪贴板粘贴图片或拖拽文件到编辑器，会以内联 <code>![](data:…)</code>
-                形式插入（演示用 base64 mock，可替换为真实上传接口）。</p>
-            </section>
-            <section>
-              <h3>视图模式</h3>
-              <p>工具栏右侧 <kbd>‖</kbd> 仅编辑 / <kbd>◫</kbd> 仅预览，<kbd>⛶</kbd> 触发浏览器全屏。
-                草稿自动保存到 localStorage，刷新不丢。</p>
-            </section>
+          <div class="eo-info-body">
+            <p>
+              <strong>VUE-md-Forge</strong> 是一个基于 Vue 3 的 Markdown 编辑器插件，
+              工具栏与图标参考
+              <a href="https://github.com/luogu-dev/markdown-palettes" target="_blank" rel="noopener">luogu-dev/markdown-palettes</a>。
+            </p>
+            <p>
+              特性：双栏实时预览、字符自动配对、行号、滚动同步、KaTeX 公式、
+              代码高亮、CSP-friendly 零 CDN 产物。
+            </p>
           </div>
         </div>
       </div>
@@ -620,20 +571,17 @@ defineExpose({ scrollToTop });
 /* ── toolbar ────────────────────────────────────────────────────────── */
 .eo-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 6px 10px;
   background: var(--mdf-bg-elev, #fff);
   border-bottom: 1px solid var(--mdf-line, #d0d7de);
   flex: 0 0 auto;
   min-height: 38px;
 }
-.eo-group { display: flex; gap: 2px; }
-.eo-sep { width: 1px; height: 18px; background: var(--mdf-line, #d0d7de); margin: 0 6px; }
-.eo-spacer { flex: 1 1 auto; }
 .eo-toolbar button {
   font: inherit;
-  font-size: 12px;
   background: transparent;
   color: var(--mdf-fg, #1f2328);
   border: 1px solid transparent;
@@ -641,39 +589,30 @@ defineExpose({ scrollToTop });
   padding: 3px 8px;
   cursor: pointer;
   min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
 }
 .eo-toolbar button:hover { background: var(--mdf-hover, #f3f4f6); }
 .eo-toolbar button.active { background: var(--mdf-accent-soft, #ddf4ff); color: var(--mdf-accent, #4183c4); }
-.eo-toolbar code { font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace); font-size: 11px; }
-
-/* toolbar button labels / glyphs */
-.eo-btn-label {
+.eo-toolbar .eo-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--mdf-line, #d0d7de);
+  margin: 0 6px;
+}
+.eo-btn-glyph {
   font-family: var(--mdf-font-sans, system-ui);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.02em;
-}
-.eo-btn-label sub {
-  font-size: 9px;
-  font-weight: 500;
-  vertical-align: -2px;
-  opacity: 0.7;
-}
-.eo-btn-glyph {
-  font-family: var(--mdf-font-sans, system-ui);
-  font-size: 14px;
-  line-height: 1;
-  display: inline-block;
   min-width: 14px;
 }
-.eo-btn-sub { font-size: 10px; opacity: 0.7; vertical-align: 1px; }
 
-/* view mode — switch the body grid; nothing else */
-.editor-only[data-mdf-view='dual'] .eo-body { grid-template-columns: 1fr 1fr; }
-.editor-only[data-mdf-view='edit'] .eo-body { grid-template-columns: 1fr; }
-.editor-only[data-mdf-view='edit'] .eo-preview { display: none; }
-.editor-only[data-mdf-view='preview'] .eo-body { grid-template-columns: 1fr; }
-.editor-only[data-mdf-view='preview'] .eo-source { display: none; }
+/* ── preview visibility (luogu semantics) ─────────────────────────── */
+.editor-only[data-mdf-view='full'] .eo-source { display: none; }
 
 /* ── body / panes ───────────────────────────────────────────────────── */
 .eo-body {
@@ -734,7 +673,6 @@ defineExpose({ scrollToTop });
   color: var(--mdf-fg, #1f2328);
   z-index: 1;
 }
-.eo-overlay.hidden { display: none; }
 .eo-textarea {
   color: transparent;
   caret-color: var(--mdf-fg, #1f2328);
@@ -779,6 +717,9 @@ defineExpose({ scrollToTop });
 .eo-rendered :deep(blockquote) { margin: 0.8em 0; padding: 4px 12px; border-left: 3px solid var(--mdf-accent, #4183c4); color: var(--mdf-muted, #6e7781); background: #f6f8fa; border-radius: 0 4px 4px 0; }
 .eo-rendered :deep(.katex) { font-size: 1.05em; }
 
+/* hide-preview overrides the .eo-preview display rule above */
+.eo-preview--hidden { display: none !important; }
+
 /* ── status bar ────────────────────────────────────────────────────── */
 .eo-status {
   display: flex;
@@ -814,9 +755,6 @@ defineExpose({ scrollToTop });
 .eo-link:hover { text-decoration: underline; }
 .eo-tip { color: var(--mdf-muted, #6e7781); }
 
-/* ── immersive ─────────────────────────────────────────────────────── */
-/* (removed; view-only modes via data-mdf-view attribute) */
-
 /* ── toast ─────────────────────────────────────────────────────────── */
 .eo-toast {
   position: fixed;
@@ -838,8 +776,8 @@ defineExpose({ scrollToTop });
 .eo-toast-enter-from, .eo-toast-leave-to { opacity: 0; transform: translate(-50%, 8px); }
 .eo-toast-enter-active, .eo-toast-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 
-/* ── help modal ────────────────────────────────────────────────────── */
-.eo-help-mask {
+/* ── info modal ────────────────────────────────────────────────────── */
+.eo-info-mask {
   position: fixed;
   inset: 0;
   background: rgba(15, 17, 21, 0.45);
@@ -849,18 +787,18 @@ defineExpose({ scrollToTop });
   justify-content: center;
   padding: 24px;
 }
-.eo-help {
+.eo-info {
   background: var(--mdf-pane-bg, #fff);
   color: var(--mdf-fg, #1f2328);
   border-radius: 10px;
-  width: min(680px, 100%);
+  width: min(560px, 100%);
   max-height: 86vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
   font-family: var(--mdf-font-sans, system-ui);
 }
-.eo-help-head {
+.eo-info-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -868,7 +806,7 @@ defineExpose({ scrollToTop });
   border-bottom: 1px solid var(--mdf-line, #d0d7de);
   font-size: 14px;
 }
-.eo-help-close {
+.eo-info-close {
   background: transparent;
   border: 0;
   font-size: 16px;
@@ -877,56 +815,15 @@ defineExpose({ scrollToTop });
   padding: 4px 8px;
   border-radius: 4px;
 }
-.eo-help-close:hover { background: var(--mdf-hover, #f3f4f6); }
-.eo-help-body {
+.eo-info-close:hover { background: var(--mdf-hover, #f3f4f6); }
+.eo-info-body {
   padding: 14px 22px 22px;
   overflow: auto;
-}
-.eo-help-body section { margin-bottom: 18px; }
-.eo-help-body h3 {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--mdf-accent, #4183c4);
-  margin: 0 0 8px;
-  letter-spacing: 0.02em;
-}
-.eo-help-body p {
-  margin: 0;
   font-size: 13px;
   line-height: 1.7;
-  color: var(--mdf-fg, #1f2328);
 }
-.eo-help-body code {
-  font-family: var(--mdf-font-mono, monospace);
-  font-size: 11.5px;
-  background: var(--mdf-code-bg, #f6f8fa);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-.eo-help-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-}
-.eo-help-table td {
-  padding: 5px 6px;
-  border-bottom: 1px solid var(--mdf-line, #d0d7de);
-}
-.eo-help-table td:first-child {
-  width: 220px;
-  white-space: nowrap;
-}
-.eo-help-table kbd {
-  font: inherit;
-  font-family: var(--mdf-font-mono, monospace);
-  font-size: 11px;
-  padding: 1px 6px;
-  border: 1px solid var(--mdf-line, #d0d7de);
-  border-bottom-width: 2px;
-  border-radius: 3px;
-  background: var(--mdf-code-bg, #f6f8fa);
-  margin: 0 1px;
-}
+.eo-info-body p { margin: 0 0 10px; }
+.eo-info-body a { color: var(--mdf-accent, #4183c4); }
 .eo-fade-enter-from, .eo-fade-leave-to { opacity: 0; }
 .eo-fade-enter-active, .eo-fade-leave-active { transition: opacity 0.18s ease; }
 </style>

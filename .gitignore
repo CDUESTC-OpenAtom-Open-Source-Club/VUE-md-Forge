@@ -15,3 +15,7 @@ Thumbs.db
 # local scratch: PR bodies, notes, temporary exports
 _scratch/
 *.draft.md
+
+# local reference: unpacked third-party editor source (luogu-dev/markdown-palettes, etc.)
+# kept on disk for offline inspection, never pushed to remote.
+test/
