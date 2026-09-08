@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-demo/
+*.local
+*.log
+*.tsbuildinfo
+
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# local scratch: PR bodies, notes, temporary exports
+_scratch/
+*.draft.md
