@@ -1,0 +1,77 @@
+/* ── themes.css ──────────────────────────────────────────────────────────
+ * Two CSS-variable-driven themes. No DOM swap, no class cascade explosion.
+ * Apply by setting `data-mdf-theme` on a parent element (or root).
+ *
+ *   <div data-mdf-theme="typora-dark">
+ *     <MdEditor ... />
+ *   </div>
+ *
+ * Or use the public MdEditor component which forwards v-model:theme for you.
+ */
+
+:root,
+[data-mdf-theme='typora-light'] {
+  --mdf-bg: #fafafa;
+  --mdf-bg-elev: #ffffff;
+  --mdf-fg: #1f2328;
+  --mdf-muted: #6e7781;
+  --mdf-line: #d0d7de;
+  --mdf-pane-bg: #ffffff;
+  --mdf-hover: #f3f4f6;
+  --mdf-gutter-bg: #f6f8fa;
+  --mdf-code-bg: #f6f8fa;
+  --mdf-accent: #4183c4;
+  --mdf-accent-soft: #ddf4ff;
+  --mdf-link: #1f6feb;
+  --mdf-quote: #6e7781;
+  --mdf-list-marker: #4183c4;
+  --mdf-emphasis: #5a3e9a;
+  --mdf-warning: #cf222e;
+  --mdf-success: #1a7f37;
+  --mdf-overlay-text-color: #1f2328;
+  --mdf-overlay-bold: #1f2328;
+  --mdf-overlay-italic: #5a3e9a;
+  --mdf-overlay-heading: #4183c4;
+  --mdf-overlay-link: #1f6feb;
+  --mdf-overlay-code-text: #cf222e;
+  --mdf-overlay-code-bg: rgba(207, 34, 46, 0.08);
+  --mdf-overlay-math: #cf222e;
+  --mdf-overlay-quote: #6e7781;
+  --mdf-overlay-hr: #d0d7de;
+  --mdf-overlay-list: #4183c4;
+  --mdf-overlay-codeblock: #6e7781;
+  --mdf-overlay-codeblock-bg: #f6f8fa;
+}
+
+[data-mdf-theme='typora-dark'] {
+  --mdf-bg: #1e1e1e;
+  --mdf-bg-elev: #252526;
+  --mdf-fg: #d4d4d4;
+  --mdf-muted: #858585;
+  --mdf-line: #2d2d2d;
+  --mdf-pane-bg: #252526;
+  --mdf-hover: #2a2d2e;
+  --mdf-gutter-bg: #181818;
+  --mdf-code-bg: #1e1e1e;
+  --mdf-accent: #6cb6ff;
+  --mdf-accent-soft: #1f3a5c;
+  --mdf-link: #6cb6ff;
+  --mdf-quote: #858585;
+  --mdf-list-marker: #6cb6ff;
+  --mdf-emphasis: #c586c0;
+  --mdf-warning: #f48771;
+  --mdf-success: #89d185;
+  --mdf-overlay-text-color: #d4d4d4;
+  --mdf-overlay-bold: #ffffff;
+  --mdf-overlay-italic: #c586c0;
+  --mdf-overlay-heading: #6cb6ff;
+  --mdf-overlay-link: #6cb6ff;
+  --mdf-overlay-code-text: #f48771;
+  --mdf-overlay-code-bg: rgba(244, 135, 113, 0.12);
+  --mdf-overlay-math: #f48771;
+  --mdf-overlay-quote: #858585;
+  --mdf-overlay-hr: #404040;
+  --mdf-overlay-list: #6cb6ff;
+  --mdf-overlay-codeblock: #9cdcfe;
+  --mdf-overlay-codeblock-bg: #1e1e1e;
+}

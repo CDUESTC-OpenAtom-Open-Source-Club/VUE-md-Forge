@@ -1,19 +1,14 @@
 <script setup lang="ts">
 /**
- * Live preview — two panes:
- *   left:  textarea (with character auto-pairing)
- *   right: live Markdown render (highlight.js + KaTeX + sanitiser)
+ * Preview hub — single view: the public <MdEditor> component.
  *
- * Sample texts are pre-loaded so the first paint already has content
- * to compare against. Switching sample / typing updates the preview
- * immediately.
+ * The 5 demo samples double as a smoke test for highlighting, KaTeX,
+ * smart paste (shell fences), task lists and XSS sanitisation.
  */
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
-import { MarkdownEngine } from '@/core/MarkdownEngine';
-import { PairCompleter } from '@/core/PairCompleter';
+import { onMounted, ref, watch } from 'vue';
+import MdEditor from './MdEditor.vue';
 
-const engine = new MarkdownEngine();
-const pair = new PairCompleter();
+type ThemeName = 'typora-light' | 'typora-dark';
 
 const SAMPLES: Array<{ name: string; text: string }> = [
   {
@@ -186,53 +181,27 @@ done
   }
 ];
 
-const STORAGE_KEY = 'mdf-preview-draft';
+const STORAGE_KEY = 'mdf-md-editor:draft';
+const THEME_KEY = 'mdf-md-editor:theme';
 
 const content = ref<string>(localStorage.getItem(STORAGE_KEY) ?? SAMPLES[0].text);
+const theme = ref<ThemeName>(
+  (localStorage.getItem(THEME_KEY) as ThemeName) ?? 'typora-light'
+);
 const sampleIndex = ref<number>(0);
-const renderMs = ref<number>(0);
 
-const renderedHtml = computed(() => {
-  const t0 = performance.now();
-  const html = engine.render(content.value);
-  renderMs.value = +(performance.now() - t0).toFixed(2);
-  return html;
+onMounted(() => {
+  if (content.value === '') content.value = SAMPLES[0].text;
 });
 
-let saveHandle: number | null = null;
-function scheduleSave() {
-  if (saveHandle !== null) window.clearTimeout(saveHandle);
-  saveHandle = window.setTimeout(() => {
-    localStorage.setItem(STORAGE_KEY, content.value);
-  }, 400);
-}
-
-function onInput() {
-  scheduleSave();
-}
-
-function onBeforeInput(e: Event) {
-  const ev = e as InputEvent;
-  const el = e.target as HTMLTextAreaElement;
-  const data = ev.data ?? '';
-  const result = pair.process(ev.inputType, data, {
-    value: el.value,
-    selectionStart: el.selectionStart,
-    selectionEnd: el.selectionEnd
-  });
-  if (result.preventDefault) {
-    ev.preventDefault();
-    el.value = result.value;
-    el.setSelectionRange(result.caret, result.caret);
-    content.value = el.value;
-    scheduleSave();
-  }
-}
+watch(content, (v) => localStorage.setItem(STORAGE_KEY, v), { flush: 'post' });
+watch(theme, (v) => localStorage.setItem(THEME_KEY, v), { flush: 'post' });
 
 function loadSample(index: number) {
   sampleIndex.value = index;
   content.value = SAMPLES[index].text;
   localStorage.setItem(STORAGE_KEY, content.value);
+  localStorage.setItem(STORAGE_KEY + ':name', SAMPLES[index].name);
 }
 
 function clearAll() {
@@ -240,24 +209,9 @@ function clearAll() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-onMounted(() => {
-  // Restore the last sample name if it matches.
-  const lastName = localStorage.getItem(STORAGE_KEY + ':name');
-  const idx = SAMPLES.findIndex((s) => s.name === lastName);
-  if (idx >= 0) sampleIndex.value = idx;
-});
-onBeforeUnmount(() => {
-  if (saveHandle !== null) window.clearTimeout(saveHandle);
-  localStorage.setItem(STORAGE_KEY + ':name', SAMPLES[sampleIndex.value]?.name ?? '');
-});
-
-const stats = computed(() => {
-  const text = content.value;
-  const lines = text.split('\n').length;
-  const chars = text.length;
-  const words = (text.match(/\S+/g) || []).length;
-  return { chars, lines, words };
-});
+function toggleTheme() {
+  theme.value = theme.value === 'typora-light' ? 'typora-dark' : 'typora-light';
+}
 </script>
 
 <template>
@@ -277,32 +231,24 @@ const stats = computed(() => {
         >
           {{ s.name }}
         </button>
-        <button class="danger" @click="clearAll">清空</button>
+        <button class="ghost" @click="clearAll">清空</button>
+        <button class="ghost" @click="toggleTheme">
+          {{ theme === 'typora-light' ? '☾ 切深色' : '☀ 切浅色' }}
+        </button>
       </div>
     </header>
 
-    <main class="split">
-      <section class="pane">
-        <div class="pane-head">
-          <span>输入</span>
-          <span class="meta">{{ stats.chars }} 字符 · {{ stats.lines }} 行 · {{ stats.words }} 词</span>
-        </div>
-        <textarea
-          v-model="content"
-          @input="onInput"
-          @beforeinput="onBeforeInput"
-          spellcheck="false"
-          placeholder="在这里输入 Markdown…"
-        />
-      </section>
-
-      <section class="pane">
-        <div class="pane-head">
-          <span>渲染预览</span>
-          <span class="meta">{{ renderMs }} ms · 字符配对 + KaTeX + hljs + XSS 净化</span>
-        </div>
-        <div class="preview" v-html="renderedHtml" />
-      </section>
+    <main class="editor-host">
+      <MdEditor v-model="content" v-model:theme="theme" />
     </main>
   </div>
 </template>
+
+<style scoped>
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.editor-host :deep(.editor-only) { flex: 1 1 auto; }
+</style>

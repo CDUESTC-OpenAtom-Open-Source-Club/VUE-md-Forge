@@ -446,12 +446,6 @@ function defaultCreateImageTask(input: { file?: File; src?: string; alt: string 
   };
 }
 
-function replaceImagePlaceholder(task: ImageTask, markdown: string) {
-  // placeholder generation lives in `createImageTask` callback, but the
-  // placeholder can still be reconstructed by the consumer if it needs to.
-  return task.id ? markdown : markdown;
-}
-
 function createFailedImageText(alt: string, reason: string) {
   return `> 图片未导入：${alt}。${reason}。`;
 }

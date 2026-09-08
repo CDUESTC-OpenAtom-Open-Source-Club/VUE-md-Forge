@@ -1,0 +1,9 @@
+/* editor-only.css — styles for the standalone editor-only window. */
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  font-family: var(--mdf-font-sans, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  background: var(--mdf-bg);
+  color: var(--mdf-fg);
+}

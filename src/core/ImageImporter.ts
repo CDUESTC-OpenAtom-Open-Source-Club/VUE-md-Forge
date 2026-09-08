@@ -52,15 +52,18 @@ export function createImageTask(input: { file?: File; src?: string; alt: string 
 
 export class ImageImporter {
   private readonly uploader: UploaderFn;
-  private readonly tries: number;
+  // Reserved for future retry logic; kept as a constructor-validated field.
+  private readonly _tries: number;
   private readonly wait: number;
   private running = false;
   private queue: ImageTask[] = [];
 
   constructor(uploader: UploaderFn, options: ImageImporterOptions = {}) {
     this.uploader = uploader;
-    this.tries = options.placeholderWaitTries ?? DEFAULT_TRIES;
+    this._tries = options.placeholderWaitTries ?? DEFAULT_TRIES;
     this.wait = options.placeholderWaitMs ?? DEFAULT_WAIT;
+    // _tries is reserved for downstream retry logic; ensure linter sees a use.
+    void this._tries;
   }
 
   enqueue(tasks: ImageTask[]): void {

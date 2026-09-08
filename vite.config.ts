@@ -38,7 +38,8 @@ export default defineConfig(({ mode }) => {
             external: ['vue'],
             output: {
               globals: { vue: 'Vue' },
-              assetFileNames: 'vue-md-forge.[ext]'
+              assetFileNames: 'vue-md-forge.[ext]',
+              exports: 'named'
             }
           }
         }
@@ -47,7 +48,8 @@ export default defineConfig(({ mode }) => {
           outDir: 'dist-demo',
           rollupOptions: {
             input: {
-              preview: fileURLToPath(new URL('./preview.html', import.meta.url))
+              preview: fileURLToPath(new URL('./preview.html', import.meta.url)),
+              editorOnly: fileURLToPath(new URL('./editor-only.html', import.meta.url))
             }
           }
         }
