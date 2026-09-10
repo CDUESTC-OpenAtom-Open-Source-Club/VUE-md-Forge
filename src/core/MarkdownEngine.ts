@@ -11,6 +11,10 @@ import MarkdownIt from 'markdown-it';
 // `markdown-it-katex` ^3 is unmaintained and incompatible with markdown-it 14.
 import katex from '@vscode/markdown-it-katex';
 import 'katex/dist/katex.min.css';
+// Local LaTeX-native delimiter plugin (`\(..\)` / `\[..\]`). Must register
+// BEFORE `@vscode/markdown-it-katex` so we win the rule race; both emit
+// `math_inline` / `math_block` tokens and share the upstream renderer.
+import { katexDelimiters } from './markdownIt/katexDelimiters';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -86,6 +90,7 @@ export class MarkdownEngine {
         return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`;
       }
     });
+    this.md.use(katexDelimiters);
     this.md.use(katex);
     // Headings get auto-ids so anchor links work.
     this.md.use((md) => {

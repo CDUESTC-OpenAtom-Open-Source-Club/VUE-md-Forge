@@ -99,12 +99,14 @@ docker run -d \\
     name: '数学 / KaTeX',
     text: `# KaTeX 测试
 
-## 行内公式
+## 行内公式（4 种 delimiter 都支持）
 
 勾股定理：$a^2 + b^2 = c^2$。
 欧拉恒等式：$e^{i\\pi} + 1 = 0$。
+LaTeX 风 inline：\\(E = mc^2\\)。
+LaTeX 风 inline（多行不行）：\\(e^{i\\pi} + 1 = 0\\)。
 
-## 块级公式
+## 块级公式（4 种 delimiter 都支持）
 
 $$
 \\begin{aligned}
@@ -118,6 +120,14 @@ $$
 $$
 \\hat{H}\\psi = E\\psi
 $$
+
+LaTeX 风块级（多行）：
+\\[
+\\hat{H}\\psi = E\\psi
+\\]
+
+LaTeX 风块级（单行）：
+\\[ E = mc^2 \\]
 `
   },
   {
