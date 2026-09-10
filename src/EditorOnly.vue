@@ -58,6 +58,7 @@ import {
   insertImage as insertImagePrompt
 } from '@/core/DomActions';
 import { attachKeyboardShortcuts } from '@/core/KeyboardShortcuts';
+import { promptAndBuildTable } from '@/core/TableBuilder';
 
 const engine = new MarkdownEngine();
 const pair = new PairCompleter();
@@ -255,8 +256,12 @@ function doInlineCode() {
   runOnTextarea((el) => wrapSelection(el, '`', '`', 'code'));
 }
 function doTable() {
+  // Sequential-prompt UX (Phase-1 placeholder).  Phase-1 quick-win #2 will
+  // replace the three `prompt()` calls with the unified Dialog engine.
+  const body = promptAndBuildTable();
+  if (!body) return;
   runOnTextarea((el) => {
-    insertText(el, '\n\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| A1 | A2 | A3 |\n| B1 | B2 | B3 |\n\n');
+    insertText(el, '\n\n' + body + '\n\n');
   });
 }
 function doUl() {
