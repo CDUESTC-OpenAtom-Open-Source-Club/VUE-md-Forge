@@ -57,6 +57,7 @@ import {
   insertLink,
   insertImage as insertImagePrompt
 } from '@/core/DomActions';
+import { attachKeyboardShortcuts } from '@/core/KeyboardShortcuts';
 
 const engine = new MarkdownEngine();
 const pair = new PairCompleter();
@@ -250,6 +251,9 @@ function doCode() {
     insertText(el, '\n\n```\ncode\n```\n\n');
   });
 }
+function doInlineCode() {
+  runOnTextarea((el) => wrapSelection(el, '`', '`', 'code'));
+}
 function doTable() {
   runOnTextarea((el) => {
     insertText(el, '\n\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| A1 | A2 | A3 |\n| B1 | B2 | B3 |\n\n');
@@ -319,14 +323,8 @@ function scrollToTop() {
 }
 
 // ── keyboard shortcuts ────────────────────────────────────────────────
-function onKeydown(e: KeyboardEvent) {
-  if (!(e.ctrlKey || e.metaKey)) return;
-  const k = e.key.toLowerCase();
-  if (k === 'b') { e.preventDefault(); doBold(); }
-  else if (k === 'i') { e.preventDefault(); doItalic(); }
-  else if (k === 'k') { e.preventDefault(); doLink(); }
-  else if (k === 's') { e.preventDefault(); scheduleSave(); flashToast('已保存', 'ok'); }
-}
+// Ref counted so onMounted / onBeforeUnmount can attach and detach cleanly.
+let detachShortcuts: (() => void) | null = null;
 function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && showInfo.value) {
     e.preventDefault();
@@ -396,9 +394,35 @@ function onDrop(e: DragEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown);
+  const ta = textareaRef.value;
+  if (ta) {
+    detachShortcuts = attachKeyboardShortcuts(ta, {
+      bold: doBold,
+      italic: doItalic,
+      strikethrough: doStrike,
+      save: () => {
+        scheduleSave();
+        flashToast('已保存', 'ok');
+      },
+      link: doLink,
+      image: doImage,
+      code: doCode,
+      inlineCode: doInlineCode,
+      table: doTable,
+      ul: doUl,
+      ol: doOl,
+      h1: () => doHeading(1),
+      h2: () => doHeading(2),
+      h3: () => doHeading(3),
+      h4: () => doHeading(4),
+      h5: () => doHeading(5),
+      h6: () => doHeading(6)
+    });
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown);
+  if (detachShortcuts) detachShortcuts();
   if (saveTimer !== null) window.clearTimeout(saveTimer);
   if (pulseTimer !== null) window.clearTimeout(pulseTimer);
 });
@@ -495,7 +519,6 @@ defineExpose({ scrollToTop });
             spellcheck="false"
             placeholder="在这里输入 Markdown…（Ctrl+B I K，粗体 / 斜体 / 链接）"
             @beforeinput="onBeforeInput"
-            @keydown="onKeydown"
             @input="(e) => { content = (e.target as HTMLTextAreaElement).value; scheduleSave(); }"
             @paste="onPaste"
             @scroll="onSourceScroll"
