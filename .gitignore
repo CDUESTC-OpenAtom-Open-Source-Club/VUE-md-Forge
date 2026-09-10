@@ -19,3 +19,10 @@ _scratch/
 # local reference: unpacked third-party editor source (luogu-dev/markdown-palettes, etc.)
 # kept on disk for offline inspection, never pushed to remote.
 test/
+
+# personal session-snapshot directory (Claude session restart handoff). Not a project artefact.
+.claude/
+
+# local archive: kept-on-disk drafts (PR descriptions, README rewrites, etc.) that
+# we want available locally but never push to remote.
+_archive/
