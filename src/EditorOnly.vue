@@ -118,6 +118,7 @@ const isPulsing = ref(false);
 const textareaRef = useTemplateRef<HTMLTextAreaElement>('textareaRef');
 const overlayRef = useTemplateRef<HTMLElement>('overlayRef');
 const previewRef = useTemplateRef<HTMLElement>('previewRef');
+const gutterRef = useTemplateRef<HTMLElement>('gutterRef');
 
 const stats = computed(() => {
   const text = content.value;
@@ -185,10 +186,19 @@ function onSourceScroll() {
   const ta = textareaRef.value;
   const ov = overlayRef.value;
   const pv = previewRef.value;
-  if (!ta || !ov || !pv) return;
+  const gutter = gutterRef.value;
+  if (!ta || !ov) return;
+  // Always sync the overlay + gutter with the textarea — they share the
+  // same scroll context (left half of the editor) and must stay aligned
+  // even when the preview-pane scroll sync is toggled off.
   ov.scrollTop = ta.scrollTop;
   ov.scrollLeft = ta.scrollLeft;
-  if (!scrollSyncEnabled.value) return;
+  if (gutter) {
+    gutter.scrollTop = ta.scrollTop;
+    gutter.scrollLeft = ta.scrollLeft;
+  }
+  // Two-way editor <-> preview sync is opt-in (toolbar lock toggle).
+  if (!scrollSyncEnabled.value || !pv) return;
   if (syncing) {
     syncing = false;
     return;
@@ -508,7 +518,7 @@ defineExpose({ scrollToTop });
     <main class="eo-body" @drop="onDrop" @dragover.prevent>
       <!-- source pane -->
       <section class="eo-source" v-show="viewMode !== 'full'">
-        <div class="eo-gutter" aria-hidden="true">
+        <div ref="gutterRef" class="eo-gutter" aria-hidden="true">
           <div v-for="n in lineNumbers" :key="n" class="eo-line-no">{{ n }}</div>
         </div>
         <div class="eo-source-stack">
@@ -594,6 +604,11 @@ defineExpose({ scrollToTop });
   background: var(--mdf-bg, #fafafa);
   color: var(--mdf-fg, #1f2328);
   font-family: var(--mdf-font-sans, 'Noto Sans SC', system-ui, sans-serif);
+  /* Shared line-height (in px, NOT unitless) so that the gutter and the
+   * textarea agree on "what is line N". A unitless line-height + differing
+   * font-sizes would scale to different pixel heights, causing the gutter
+   * to drift off the source text as the user scrolls. */
+  --mdf-line-h: 21.6px;
 }
 
 /* ── toolbar ────────────────────────────────────────────────────────── */
@@ -665,10 +680,12 @@ defineExpose({ scrollToTop });
   padding: 12px 4px;
   font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: var(--mdf-line-h);
   color: var(--mdf-muted, #6e7781);
   text-align: right;
   user-select: none;
+  /* overflow: hidden hides the scrollbar but still lets scrollTop be
+   * programmatically set, which is how onSourceScroll() drives the gutter. */
   overflow: hidden;
 }
 .eo-line-no { white-space: nowrap; }
@@ -685,7 +702,7 @@ defineExpose({ scrollToTop });
   padding: 12px 14px;
   font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
   font-size: 13.5px;
-  line-height: 1.6;
+  line-height: var(--mdf-line-h);
   letter-spacing: 0;
   tab-size: 2;
   white-space: pre-wrap;
