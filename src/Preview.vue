@@ -88,11 +88,13 @@ server:
 EOF
 
 # 多行续行
+\`\`\`bash
 docker run -d \\
   --name web \\
   -p 80:80 \\
   -v /data:/usr/share/nginx/html \\
   nginx:alpine
+\`\`\`
 `
   },
   {

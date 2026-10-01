@@ -26,6 +26,15 @@
 [data-mdf-theme='typora-light'] {
   color-scheme: light;
 
+  /* 行高常量（与编辑器字号 13.5px 耦合）。两个主题必须保持一致——
+   * `.eo-textarea / .eo-overlay / .eo-gutter` 都读此变量。
+   *
+   * 早期 21.6px 让 textarea/overlay 精确渲染 21.6px 行距, 但 gutter 的
+   * 数字字符 intrinsic 行高被浏览器舍入到 22px, 0.4px/行 累计, 30 行
+   * 错位 12px —— 用户报告 "行号和文字间距不一致" 的根因。
+   * 改为 22px 后三层都渲染 22px/行, 像素级完美对齐。 */
+  --mdf-line-h: 22px;
+
   --mdf-bg: #fafafa;
   --mdf-bg-elev: #ffffff;
   --mdf-fg: #0d1117;
@@ -60,6 +69,9 @@
 
 [data-mdf-theme='typora-dark'] {
   color-scheme: dark;
+
+  /* 行高必须与 light 主题一致 —— 见 :root 注释。 */
+  --mdf-line-h: 22px;
 
   --mdf-bg: #1e1e1e;
   --mdf-bg-elev: #2a2a2a;

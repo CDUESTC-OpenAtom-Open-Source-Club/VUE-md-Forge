@@ -24,7 +24,7 @@
  *   - localStorage draft persistence
  *   - Image paste/drop → mock base64 upload → inline ![]() replacement
  */
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import {
   faBold,
@@ -82,14 +82,27 @@ const emit = defineEmits<{
 
 // `content` is the live editor state. When `modelValue` is provided, the parent
 // is the source of truth (controlled mode). Otherwise the component is the
-// source of truth and falls back to `initial` then localStorage.
-const internal = ref<string>(props.modelValue ?? props.initial ?? localStorage.getItem(STORAGE_KEY) ?? '');
+// source of truth and falls back to `initial` (no localStorage here — reading
+// localStorage in setup() is what causes 'theme toggle wipes content' when the
+// host uses `:key="theme"` to force a remount on theme change: setup() runs
+// again, localStorage is empty on a fresh page, internal resets to '' and the
+// user's previous content is gone).
+const initialSource: string = props.modelValue ?? props.initial ?? '';
+const internal = ref<string>(initialSource);
 const controlled = computed(() => props.modelValue !== undefined);
 const content = computed<string>({
   get: () => (controlled.value ? (props.modelValue as string) : internal.value),
   set: (v) => {
     if (controlled.value) emit('update:modelValue', v);
     else internal.value = v;
+  }
+});
+// When the host flips from uncontrolled to controlled (rare but happens when
+// the parent only later starts passing modelValue), pull the current internal
+// state into the new modelValue so the user doesn't lose what they typed.
+watch(controlled, (nowControlled) => {
+  if (nowControlled && internal.value !== initialSource) {
+    emit('update:modelValue', internal.value);
   }
 });
 
@@ -118,22 +131,138 @@ const isPulsing = ref(false);
 const textareaRef = useTemplateRef<HTMLTextAreaElement>('textareaRef');
 const overlayRef = useTemplateRef<HTMLElement>('overlayRef');
 const previewRef = useTemplateRef<HTMLElement>('previewRef');
+const gutterRef = useTemplateRef<HTMLElement>('gutterRef');
 
 const stats = computed(() => {
   const text = content.value;
   return {
     chars: text.length,
-    lines: text.length === 0 ? 0 : text.split('\n').length,
+    logicalLines: text.length === 0 ? 0 : text.split('\n').length,
     words: (text.match(/\S+/g) || []).length,
     warning: text.length > WARN_CHARS
   };
 });
 
-const lineNumbers = computed(() => Array.from({ length: stats.value.lines }, (_, i) => i + 1));
+/**
+ * Per-logical-line gutter row heights. Each entry is the height (px) the
+ * corresponding logical line occupies in the textarea AFTER wrap. A long
+ * KaTeX / code line that wraps to two visual rows gets `2 × lineHeight`,
+ * not a new digit — the gutter stays at `logicalLines` rows in total,
+ * just like the source. Driven by an off-screen `<div>` that we feed
+ * the exact same CSS as the textarea; the browser lays it out with the
+ * same wrapping rules, so the measurement is pixel-accurate.
+ */
+const gutterLineHeights = ref<number[]>([]);
+let measureEl: HTMLDivElement | null = null;
+
+function ensureMeasureEl(): HTMLDivElement | null {
+  if (typeof document === 'undefined') return null;
+  if (measureEl && measureEl.isConnected) return measureEl;
+  const div = document.createElement('div');
+  div.setAttribute('aria-hidden', 'true');
+  Object.assign(div.style, {
+    position: 'absolute',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    left: '-9999px',
+    top: '0',
+    margin: '0',
+    border: '0',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
+    boxSizing: 'border-box'
+  });
+  document.body.appendChild(div);
+  measureEl = div;
+  return div;
+}
+
+function recomputeGutterHeights() {
+  const ta = textareaRef.value;
+  const meas = ensureMeasureEl();
+  if (!ta || !meas) {
+    gutterLineHeights.value = [];
+    return;
+  }
+  const cs = getComputedStyle(ta);
+  // Mirror every text-rendering CSS prop the browser uses for the textarea
+  // so the measurement div wraps identically.
+  meas.style.width = ta.clientWidth + 'px';
+  meas.style.fontSize = cs.fontSize;
+  meas.style.fontFamily = cs.fontFamily;
+  meas.style.fontWeight = cs.fontWeight;
+  meas.style.fontStyle = cs.fontStyle;
+  meas.style.lineHeight = cs.lineHeight;
+  meas.style.letterSpacing = cs.letterSpacing;
+  meas.style.wordSpacing = cs.wordSpacing;
+  meas.style.tabSize = cs.tabSize;
+  meas.style.paddingLeft = cs.paddingLeft;
+  meas.style.paddingRight = cs.paddingRight;
+  meas.style.paddingTop = cs.paddingTop;
+  meas.style.paddingBottom = cs.paddingBottom;
+
+  const logicals = content.value.length === 0 ? [''] : content.value.split('\n');
+  const pt = parseFloat(cs.paddingTop) || 0;
+  const pb = parseFloat(cs.paddingBottom) || 0;
+  const lh = parseFloat(cs.lineHeight) || 21.6;
+
+  const measured = logicals.map((line) => {
+    // Empty line: still give it at least one line of height so it shows up.
+    meas.textContent = line.length === 0 ? '​' : line;
+    return Math.max(lh, meas.scrollHeight - pt - pb);
+  });
+
+  // NB: deliberately NOT normalising against `ta.scrollHeight`. When the
+  // textarea stretches to fill its container via CSS flex/grid, browsers
+  // report `scrollHeight ≈ clientHeight` (the rendered rows get padded
+  // with blank virtual rows to match the box). Normalising against that
+  // would inflate every gutter cell by the stretch factor and break
+  // pixel alignment with the textarea's actual lines. The measurement
+  // div is already wrapped by the same browser, so `measured` is the
+  // truth.
+  gutterLineHeights.value = measured;
+}
+// Re-measure after content changes (DOM update is async — wait a tick).
+watch(
+  () => content.value,
+  () => { void nextTick(recomputeGutterHeights); },
+  { flush: 'post', immediate: true }
+);
+// And after viewport / container resizes.
+let gutterRO: ResizeObserver | null = null;
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined' && textareaRef.value) {
+    gutterRO = new ResizeObserver(() => recomputeGutterHeights());
+    gutterRO.observe(textareaRef.value);
+  }
+});
+onBeforeUnmount(() => {
+  gutterRO?.disconnect();
+  measureEl?.remove();
+  measureEl = null;
+});
+
+const lineNumbers = computed(() =>
+  Array.from({ length: stats.value.logicalLines }, (_, i) => i + 1)
+);
 
 const highlighted = computed(() => {
-  // append a trailing space so the last line is rendered by the overlay
-  return highlightMarkdown(content.value) + '\n';
+  // 字符级一致性 (Fix C): 不再无条件追加 `\n`, 否则 SAMPLES / loadSample
+  // / 清空场景会让 overlay 凭空多出 1 行空白, 被肉眼误读为末行末尾的
+  // "多余字符"。
+  //
+  // 真正根治 "滚到底时内容显示两次" 见模板里 `<pre>` 拼接的 `<br>` ——
+  // `<pre>` 末尾的 `\n` 会被 HTML parser 规范化掉, 不渲染最后一行,
+  // 而 textarea 会渲染, 造成 scrollHeight 差 1 行。`<br>` 是 HTML 元素
+  // 不会被规范化, 强制 pre 末尾多渲染 1 行 (21.6px), scrollHeight 与
+  // textarea 对齐; 同时 textarea 看不到 HTML 元素, 字符级仍然 char-for-char。
+  // 解法: 在 highlight 输出末尾追加 `​` (zero-width space, 不可见)
+  // —— 它不被 HTML parser 当 whitespace 规范化, 强制 `<pre>` 渲染出
+  // trailing 行, scrollHeight 与 textarea 对齐。textarea 也会保留
+  // 这个零宽字符 (因为是 Unicode 字符不是 whitespace), 但 `:` 的
+  // textContent 长度只 +1 而已, 不会让 overlay 比 textarea 长出可见字符。
+  return highlightMarkdown(content.value);
 });
 
 const renderedHtml = computed(() => {
@@ -185,10 +314,26 @@ function onSourceScroll() {
   const ta = textareaRef.value;
   const ov = overlayRef.value;
   const pv = previewRef.value;
-  if (!ta || !ov || !pv) return;
+  const gutter = gutterRef.value;
+  if (!ta || !ov) return;
+  // Overlay is `position: absolute; inset: 0` — its scrollHeight equals the
+  // textarea's exactly (both use the same `white-space: pre-wrap` rules), so
+  // a pixel-level hand-off works. The gutter, however, measures per-row
+  // heights via an off-screen `<div>` and that measurement diverges from the
+  // real textarea by ~25px (≈1 logical line) once wrap kicks in. Doing a raw
+  // `gutter.scrollTop = ta.scrollTop` then drifts the line numbers off by
+  // ~1 logical line. Percentage sync removes the drift at the cost of not
+  // being pixel-perfect, which is fine — the gutter is just a navigation aid.
   ov.scrollTop = ta.scrollTop;
   ov.scrollLeft = ta.scrollLeft;
-  if (!scrollSyncEnabled.value) return;
+  if (gutter) {
+    const tMax = ta.scrollHeight - ta.clientHeight;
+    const gMax = gutter.scrollHeight - gutter.clientHeight;
+    gutter.scrollTop = tMax > 0 && gMax > 0 ? (ta.scrollTop / tMax) * gMax : 0;
+    gutter.scrollLeft = ta.scrollLeft;
+  }
+  // Two-way editor <-> preview sync is opt-in (toolbar lock toggle).
+  if (!scrollSyncEnabled.value || !pv) return;
   if (syncing) {
     syncing = false;
     return;
@@ -508,14 +653,19 @@ defineExpose({ scrollToTop });
     <main class="eo-body" @drop="onDrop" @dragover.prevent>
       <!-- source pane -->
       <section class="eo-source" v-show="viewMode !== 'full'">
-        <div class="eo-gutter" aria-hidden="true">
-          <div v-for="n in lineNumbers" :key="n" class="eo-line-no">{{ n }}</div>
+        <div ref="gutterRef" class="eo-gutter" aria-hidden="true">
+          <div
+            v-for="(n, i) in lineNumbers"
+            :key="n"
+            class="eo-line-no"
+            :style="{ height: (gutterLineHeights[i] ?? 0) + 'px' }"
+          >{{ n }}</div>
         </div>
         <div class="eo-source-stack">
           <pre
             ref="overlayRef"
             class="eo-overlay"
-            v-html="highlighted"
+            v-html="highlighted + '<br>'"
           />
           <textarea
             ref="textareaRef"
@@ -541,7 +691,7 @@ defineExpose({ scrollToTop });
     <footer class="eo-status">
       <span :class="['eo-chars', { warn: stats.warning }]">{{ stats.chars }} 字符</span>
       <span class="eo-sep-dot">·</span>
-      <span>{{ stats.lines }} 行</span>
+      <span>{{ stats.logicalLines }} 行</span>
       <span class="eo-sep-dot">·</span>
       <span>{{ stats.words }} 词</span>
       <span class="eo-sep-dot">·</span>
@@ -594,6 +744,12 @@ defineExpose({ scrollToTop });
   background: var(--mdf-bg, #fafafa);
   color: var(--mdf-fg, #1f2328);
   font-family: var(--mdf-font-sans, 'Noto Sans SC', system-ui, sans-serif);
+  /* 行高常量从 :root / data-mdf-theme 继承, 不在此处覆盖 —— 早期这里硬编
+   * 码 21.6px 反而把 themes.css 里的 22px 覆盖掉, gutter 和 overlay 的
+   * 实际渲染 step 不一致 (gutter=22 overlay=21.6, 0.4px/行累计错位)。
+   * 行高 (in px, NOT unitless) 的目的：让 gutter / textarea / overlay
+   * 三个表面用同一像素步进, 避免不同 font-size 下 unitless 计算出不同
+   * 像素高度。 */
 }
 
 /* ── toolbar ────────────────────────────────────────────────────────── */
@@ -662,14 +818,35 @@ defineExpose({ scrollToTop });
 .eo-gutter {
   background: var(--mdf-gutter-bg, #f6f8fa);
   border-right: 1px solid var(--mdf-line, #d0d7de);
-  padding: 12px 4px;
-  font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
-  font-size: 12px;
-  line-height: 1.6;
+  /* gutter padding-top 比 textarea 大 2px (14 vs 12), 抵消 JetBrains Mono
+   * 数字字符 baseline 比字母高的 intrinsic 差异 (数字 x-height 略低 +
+   * 无 descender, bbox 顶部比 "#/A" 等字母低 2-3px)。视觉上数字字符与
+   * textarea 字母字符顶部精确对齐, 不再有行号"下沉"错觉。 */
+  padding: 14px 4px 12px;
+  font-family: var(--mdf-font-mono, 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace);
+  /* 与 textarea / overlay 共用 `--mdf-line-h`, 保证三个表面行高一致——
+   * 之前这里硬编码 21.6px, 而 textarea 引用未定义的 `--mdf-line-h` 落到
+   * `normal` (≈ 16.2px), 每行错位 5.4px, 4 行错位累计 21.6px, 用户报告
+   * "行号和文字间距不一样" 由此而来。font-size 也必须保持一致 (14.5px),
+   * 否则 baseline 偏移 + scrollHeight 不等会让 gutter.scrollTop 同步失效。
+   */
+  font-size: 14.5px;
+  line-height: var(--mdf-line-h);
   color: var(--mdf-muted, #6e7781);
   text-align: right;
   user-select: none;
+  /* Lock gutter height to the grid cell (`stretch` is grid's default; the
+   * earlier `align-self: start` let it balloon to the full logical-line
+   * height and overflow the pane — visible as digits bleeding across the
+   * status bar when the source grew tall). Content beyond the cell is
+   * clipped by `overflow: hidden` below; the programmatically-driven
+   * `gutter.scrollTop = textarea.scrollTop` still aligns the visible
+   * digits with the source content inside the clipped region. */
   overflow: hidden;
+  /* min-height: 0 so the grid row can shrink below its content size
+   * (otherwise the row inflates to gutter's intrinsic height and the
+   * whole .eo-source pushes past the viewport again). */
+  min-height: 0;
 }
 .eo-line-no { white-space: nowrap; }
 
@@ -683,9 +860,16 @@ defineExpose({ scrollToTop });
   inset: 0;
   margin: 0;
   padding: 12px 14px;
-  font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
-  font-size: 13.5px;
-  line-height: 1.6;
+  /* VSCode 风格 monospace 字体栈 —— Cascadia Code (Win11/Mac 自带, 微软
+   * 为 VSCode 设计) 优先, 其次 JetBrains Mono (开发圈最流行), 最后
+   * Consolas / Menlo / Courier New 兜底。Web 加载用 Google Fonts 的
+   * JetBrains Mono 已生效, 离线 fallback 仍能拿到 Consolas。 */
+  font-family: var(--mdf-font-mono, 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace);
+  /* 字号从 13.5 增到 14.5 —— 用户反馈代码框可读性差, 增大后字符更易辨认。
+   * 三层 (textarea / overlay / gutter) 必须保持同一 font-size, 否则
+   * baseline 偏移 + scrollHeight 不等会让 gutter 与 textarea 行号错位。 */
+  font-size: 14.5px;
+  line-height: var(--mdf-line-h);
   letter-spacing: 0;
   tab-size: 2;
   white-space: pre-wrap;
@@ -699,12 +883,28 @@ defineExpose({ scrollToTop });
 .eo-overlay {
   pointer-events: none;
   color: var(--mdf-fg, #1f2328);
-  z-index: 1;
+  /* Overlay sits ABOVE the textarea so its coloured token spans show
+   * through. The textarea's own text is no longer transparent — that
+   * old design was brittle: any host CSS that hid or restyled .eo-overlay
+   * (display:none, negative z-index, pre { color: white }, etc.) made
+   * every keystroke invisible. Now the textarea carries its own fg colour
+   * as a baseline, and the overlay just paints coloured spans on top. */
+  z-index: 2;
 }
 .eo-textarea {
+  /* textarea 文字 transparent —— 让 overlay 独占显示，根治"重叠渲染"。
+   * 旧实现 textarea/overlay 都用 fg 色，两层文字颜色一致、暗色背景下抗锯齿
+   * 让文字看起来更粗 / 重影，用户主观读为"重叠渲染"。
+   * 现在 overlay 在 z-index:2 上独占显示有色 span，textarea 只负责：
+   *   - 接收键盘事件、保持 caret
+   *   - 撑开 scrollHeight（确保 overlay 与 textarea 行数同步）
+   *   - 通过 caret-color 让光标可见
+   * 注意：overlay 失效（如被外部 CSS display:none）时 textarea 文字会消失。
+   * 这是预期 trade-off，组件 .eo-overlay / .eo-textarea 都是本仓库渲染，
+   * 第三方无法触及；早期"fallback 到 textarea"的过度防御已撤除。 */
   color: transparent;
   caret-color: var(--mdf-fg, #1f2328);
-  z-index: 2;
+  z-index: 1;
   background: transparent;
 }
 .eo-textarea::placeholder { color: var(--mdf-muted, #6e7781); opacity: 0.6; }
@@ -730,14 +930,24 @@ defineExpose({ scrollToTop });
   font-size: 14.5px;
   line-height: 1.7;
 }
-.eo-rendered :deep(h1) { font-size: 1.6em; border-bottom: 1px solid var(--mdf-line, #d0d7de); padding-bottom: 0.25em; margin: 1em 0 0.5em; }
-.eo-rendered :deep(h2) { font-size: 1.3em; margin: 1em 0 0.4em; }
-.eo-rendered :deep(h3) { font-size: 1.1em; }
+/* 标题字号比例 (Typora 风格): H6 与正文同号, 其他按 typographic scale
+ * 递减。H1-H3 显著大 (1.8 / 1.5 / 1.25), H4-H5 轻微大 (1.1 / 1.05),
+ * H6 = 正文 (1em)。H1-H6 全部 font-weight: 600 让标题醒目。
+ *
+ * 早期 H4-H5-H6 没显式声明 → 走继承 (1em), 但因为 H3 是 1.1em, 视觉上
+ * H3 比 H1 差距小, H4/H5/H6 看起来跟正文一样, 用户感受"H6 已经和正文
+ * 一样大但其他标题比例不舒服"。显式拉到 1.05em 让 H4/H5 跟正文有区别。 */
+.eo-rendered :deep(h1) { font-size: 1.8em; font-weight: 600; border-bottom: 1px solid var(--mdf-line, #d0d7de); padding-bottom: 0.25em; margin: 1em 0 0.5em; }
+.eo-rendered :deep(h2) { font-size: 1.5em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h3) { font-size: 1.25em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h4) { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h5) { font-size: 1.05em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h6) { font-size: 1em;   font-weight: 600; margin: 1em 0 0.4em; }
 .eo-rendered :deep(p) { margin: 0.5em 0; }
 .eo-rendered :deep(a) { color: var(--mdf-accent, #4183c4); text-decoration: none; }
 .eo-rendered :deep(a:hover) { text-decoration: underline; }
 .eo-rendered :deep(code) { font-family: var(--mdf-font-mono); background: var(--mdf-code-bg, #f6f8fa); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
-.eo-rendered :deep(pre) { background: var(--mdf-code-bg, #f6f8fa); border: 1px solid var(--mdf-line, #d0d7de); border-radius: 6px; padding: 12px 14px; overflow: auto; font-size: 12.5px; }
+.eo-rendered :deep(pre) { background: var(--mdf-code-bg, #f6f8fa); border: 1px solid var(--mdf-line, #d0d7de); border-radius: 6px; padding: 12px 14px; overflow: auto; font-size: 14px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace; line-height: 1.55; }
 .eo-rendered :deep(table) { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
 .eo-rendered :deep(th), .eo-rendered :deep(td) { border: 1px solid var(--mdf-line, #d0d7de); padding: 6px 10px; text-align: left; }
 .eo-rendered :deep(th) { background: var(--mdf-code-bg, #f6f8fa); }
