@@ -741,8 +741,8 @@ defineExpose({ scrollToTop });
 .eo-rendered :deep(table) { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
 .eo-rendered :deep(th), .eo-rendered :deep(td) { border: 1px solid var(--mdf-line, #d0d7de); padding: 6px 10px; text-align: left; }
 .eo-rendered :deep(th) { background: var(--mdf-code-bg, #f6f8fa); }
-.eo-rendered :deep(tr:nth-child(even) td) { background: #fafbfc; }
-.eo-rendered :deep(blockquote) { margin: 0.8em 0; padding: 4px 12px; border-left: 3px solid var(--mdf-accent, #4183c4); color: var(--mdf-muted, #6e7781); background: #f6f8fa; border-radius: 0 4px 4px 0; }
+.eo-rendered :deep(tr:nth-child(even) td) { background: var(--mdf-hover, #f3f4f6); }
+.eo-rendered :deep(blockquote) { margin: 0.8em 0; padding: 4px 12px; border-left: 3px solid var(--mdf-accent, #4183c4); color: var(--mdf-muted, #6e7781); background: var(--mdf-code-bg, #f6f8fa); border-radius: 0 4px 4px 0; }
 .eo-rendered :deep(.katex) { font-size: 1.05em; }
 
 /* hide-preview overrides the .eo-preview display rule above */
