@@ -679,8 +679,20 @@ defineExpose({ scrollToTop });
   border-right: 1px solid var(--mdf-line, #d0d7de);
   padding: 12px 4px;
   font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
-  font-size: 12px;
-  line-height: var(--mdf-line-h);
+  /* MUST match .eo-textarea EXACTLY (font-size + line-height + padding-top).
+   * CSS line-height alone is not enough for pixel alignment: the baseline
+   * inside a line-box sits at `ascent * font-size`, which is font-size
+   * dependent. With gutter=12px and textarea=13.5px the baselines diverge
+   * by 1.2px/line (~ 0.8 * (13.5 - 12)). Mismatched font-size also means
+   * the gutter's scrollHeight differs from the textarea's, so a
+   * direct gutter.scrollTop = textarea.scrollTop handoff would drift
+   * proportionally. Equalising font-size is the only correct fix.
+   * Trade-off: gutter digits render slightly larger (13.5px vs the prior
+   * 12px). Acceptable — JetBrains Mono at 13.5px is still clearly smaller
+   * visually than the source text it indexes.
+   */
+  font-size: 13.5px;
+  line-height: 21.6px;
   color: var(--mdf-muted, #6e7781);
   text-align: right;
   user-select: none;
