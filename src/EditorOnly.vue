@@ -930,9 +930,19 @@ defineExpose({ scrollToTop });
   font-size: 14.5px;
   line-height: 1.7;
 }
-.eo-rendered :deep(h1) { font-size: 1.6em; border-bottom: 1px solid var(--mdf-line, #d0d7de); padding-bottom: 0.25em; margin: 1em 0 0.5em; }
-.eo-rendered :deep(h2) { font-size: 1.3em; margin: 1em 0 0.4em; }
-.eo-rendered :deep(h3) { font-size: 1.1em; }
+/* 标题字号比例 (Typora 风格): H6 与正文同号, 其他按 typographic scale
+ * 递减。H1-H3 显著大 (1.8 / 1.5 / 1.25), H4-H5 轻微大 (1.1 / 1.05),
+ * H6 = 正文 (1em)。H1-H6 全部 font-weight: 600 让标题醒目。
+ *
+ * 早期 H4-H5-H6 没显式声明 → 走继承 (1em), 但因为 H3 是 1.1em, 视觉上
+ * H3 比 H1 差距小, H4/H5/H6 看起来跟正文一样, 用户感受"H6 已经和正文
+ * 一样大但其他标题比例不舒服"。显式拉到 1.05em 让 H4/H5 跟正文有区别。 */
+.eo-rendered :deep(h1) { font-size: 1.8em; font-weight: 600; border-bottom: 1px solid var(--mdf-line, #d0d7de); padding-bottom: 0.25em; margin: 1em 0 0.5em; }
+.eo-rendered :deep(h2) { font-size: 1.5em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h3) { font-size: 1.25em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h4) { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h5) { font-size: 1.05em; font-weight: 600; margin: 1em 0 0.4em; }
+.eo-rendered :deep(h6) { font-size: 1em;   font-weight: 600; margin: 1em 0 0.4em; }
 .eo-rendered :deep(p) { margin: 0.5em 0; }
 .eo-rendered :deep(a) { color: var(--mdf-accent, #4183c4); text-decoration: none; }
 .eo-rendered :deep(a:hover) { text-decoration: underline; }
