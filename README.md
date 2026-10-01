@@ -284,9 +284,10 @@ VUE-md-Forge/
     │   └── DomActions.ts       # textarea DOM 操作
     │
     ├── styles/                 # 主题与编辑器样式
-    │   ├── editor.css
-    │   ├── themes.css          # typora-light / typora-dark
-    │   └── highlight-overrides.css
+    │   ├── themes.css          # typora-light / typora-dark CSS 变量
+    │   ├── highlight.css       # hljs token 颜色（github light + dark，通过 data-mdf-theme 切换）
+    │   ├── preview.css         # preview.html（双栏预览页）布局
+    │   └── editor-only.css     # editor-only.html（双栏编辑窗口）布局
     │
     └── types/
         └── shims.d.ts          # @vscode/markdown-it-katex 类型声明
