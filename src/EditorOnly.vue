@@ -213,17 +213,15 @@ function recomputeGutterHeights() {
     return Math.max(lh, meas.scrollHeight - pt - pb);
   });
 
-  // Normalise against the textarea's actual content height so cumulative
-  // rounding in the measurement div can't drift the gutter shorter or
-  // taller than the source pane.
-  const totalMeas = measured.reduce((a, b) => a + b, 0);
-  const taContent = ta.scrollHeight - pt - pb;
-  if (totalMeas > 0 && Math.abs(totalMeas - taContent) > 0.5) {
-    const factor = taContent / totalMeas;
-    gutterLineHeights.value = measured.map((h) => h * factor);
-  } else {
-    gutterLineHeights.value = measured;
-  }
+  // NB: deliberately NOT normalising against `ta.scrollHeight`. When the
+  // textarea stretches to fill its container via CSS flex/grid, browsers
+  // report `scrollHeight ≈ clientHeight` (the rendered rows get padded
+  // with blank virtual rows to match the box). Normalising against that
+  // would inflate every gutter cell by the stretch factor and break
+  // pixel alignment with the textarea's actual lines. The measurement
+  // div is already wrapped by the same browser, so `measured` is the
+  // truth.
+  gutterLineHeights.value = measured;
 }
 // Re-measure after content changes (DOM update is async — wait a tick).
 watch(
@@ -818,6 +816,12 @@ defineExpose({ scrollToTop });
   color: var(--mdf-muted, #6e7781);
   text-align: right;
   user-select: none;
+  /* Don't stretch to viewport — the gutter's height should track the
+   * logical lines (including any wrap-induced expansion). The textarea
+   * itself fills the rest of the pane; the empty gutter space below the
+   * last digit is just unfilled background, mirroring the way CodeMirror
+   * (which markdown-palettes uses) leaves the gutter under-numbered. */
+  align-self: start;
   /* overflow: hidden hides the scrollbar but still lets scrollTop be
    * programmatically set, which is how onSourceScroll() drives the gutter. */
   overflow: hidden;
