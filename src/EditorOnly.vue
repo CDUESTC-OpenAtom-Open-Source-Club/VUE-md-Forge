@@ -24,7 +24,7 @@
  *   - localStorage draft persistence
  *   - Image paste/drop → mock base64 upload → inline ![]() replacement
  */
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import {
   faBold,
@@ -137,13 +137,60 @@ const stats = computed(() => {
   const text = content.value;
   return {
     chars: text.length,
-    lines: text.length === 0 ? 0 : text.split('\n').length,
+    logicalLines: text.length === 0 ? 0 : text.split('\n').length,
     words: (text.match(/\S+/g) || []).length,
     warning: text.length > WARN_CHARS
   };
 });
 
-const lineNumbers = computed(() => Array.from({ length: stats.value.lines }, (_, i) => i + 1));
+/**
+ * Visual line count (logical lines + any wrap-induced rows the textarea
+ * actually renders). Driven by `textarea.scrollHeight` because that's
+ * what the browser commits after it lays out every soft-wrap. Without
+ * this, long KaTeX / code lines would fall off the bottom of the gutter
+ * while still being visible inside the textarea.
+ */
+const visualLineCount = ref(0);
+function recomputeVisualLines() {
+  const ta = textareaRef.value;
+  if (!ta) {
+    visualLineCount.value = stats.value.logicalLines;
+    return;
+  }
+  const cs = getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight);
+  if (!Number.isFinite(lh) || lh <= 0) {
+    visualLineCount.value = stats.value.logicalLines;
+    return;
+  }
+  const pt = parseFloat(cs.paddingTop) || 0;
+  const pb = parseFloat(cs.paddingBottom) || 0;
+  const inner = ta.scrollHeight - pt - pb;
+  // Round up so any partial trailing line still gets its own gutter row.
+  const visual = Math.max(1, Math.ceil(inner / lh));
+  visualLineCount.value = Math.max(stats.value.logicalLines, visual);
+}
+// Re-measure after every content change (DOM updates are async — wait a tick).
+watch(
+  () => content.value,
+  () => { void nextTick(recomputeVisualLines); },
+  { flush: 'post', immediate: true }
+);
+// Plus a ResizeObserver for window/container resizes.
+let gutterRO: ResizeObserver | null = null;
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined' && textareaRef.value) {
+    gutterRO = new ResizeObserver(() => recomputeVisualLines());
+    gutterRO.observe(textareaRef.value);
+  }
+});
+onBeforeUnmount(() => {
+  gutterRO?.disconnect();
+});
+
+const lineNumbers = computed(() =>
+  Array.from({ length: visualLineCount.value || stats.value.logicalLines }, (_, i) => i + 1)
+);
 
 const highlighted = computed(() => {
   // append a trailing space so the last line is rendered by the overlay
@@ -564,7 +611,7 @@ defineExpose({ scrollToTop });
     <footer class="eo-status">
       <span :class="['eo-chars', { warn: stats.warning }]">{{ stats.chars }} 字符</span>
       <span class="eo-sep-dot">·</span>
-      <span>{{ stats.lines }} 行</span>
+      <span>{{ visualLineCount || stats.logicalLines }} 行</span>
       <span class="eo-sep-dot">·</span>
       <span>{{ stats.words }} 词</span>
       <span class="eo-sep-dot">·</span>
