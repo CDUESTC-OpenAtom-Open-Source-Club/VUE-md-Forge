@@ -216,11 +216,6 @@ function loadSample(index: number) {
   localStorage.setItem(STORAGE_KEY + ':name', SAMPLES[index].name);
 }
 
-function clearAll() {
-  content.value = '';
-  localStorage.removeItem(STORAGE_KEY);
-}
-
 function toggleTheme() {
   theme.value = theme.value === 'typora-light' ? 'typora-dark' : 'typora-light';
 }
@@ -243,7 +238,6 @@ function toggleTheme() {
         >
           {{ s.name }}
         </button>
-        <button class="ghost" @click="clearAll">清空</button>
         <button class="ghost" @click="toggleTheme">
           {{ theme === 'typora-light' ? '☾ 切深色' : '☀ 切浅色' }}
         </button>

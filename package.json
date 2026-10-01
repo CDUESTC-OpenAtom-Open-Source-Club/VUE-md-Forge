@@ -1,6 +1,6 @@
 {
   "name": "vue-md-forge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Vue 3 Markdown editor plugin with character auto-pairing, dual-pane source preview, local highlight.js and KaTeX, and CSP-friendly zero-CDN output.",
   "type": "module",
   "license": "MIT",
