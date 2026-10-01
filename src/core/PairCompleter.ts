@@ -20,15 +20,33 @@
 export type PairTable = Record<string, string>;
 
 export const PAIRS: PairTable = {
-  '(': ')',
-  '[': ']',
-  '{': '}',
+  // ── ASCII ──
+  // 同字符配对 (markdown 标记 / smart quote)
   '"': '"',
   "'": "'",
   '`': '`',
   '*': '*',
   '_': '_',
-  '~': '~'
+  '~': '~',
+  // 异字符配对
+  '(': ')',
+  '[': ']',
+  '{': '}',
+  // ── 中文 ──
+  // 中文弯引号 (U+201C/D, U+2018/9) —— 注意 opening ≠ closing,
+  // 不是 ASCII `"`/`'`, 需要单独列
+  '“': '”', // " "
+  '‘': '’', // ' '
+  // 中文全角括号 —— 用户列出
+  '（': '）', // （ ）
+  '【': '】', // 【 】
+  '《': '》', // 《 》
+  // 中文方头 / 双引号（繁体 / 日文常用）
+  '「': '」', // 「 」
+  '『': '』', // 『 』
+  // 中文尖括号 / 六角括号（冷门但偶尔出现）
+  '〈': '〉', // 〈 〉
+  '〖': '〗'  // 〖 〗
 };
 
 const TRIO_PAIR = new Set(['"', "'", '`']);
@@ -56,13 +74,28 @@ export class PairCompleter {
   /**
    * Single dispatch — given a `beforeinput`-style payload, decide what
    * to do. `inputType` is one of the standard `InputEvent` values.
+   *
+   * Decision order matters:
+   *   1. closing-char skip-over (e.g. user typed `)` with caret before a `)`)
+   *      must be checked BEFORE the generic opening-char insert. The earlier
+   *      order let `handleOpenChar` swallow all single-char inputs and return
+   *      the value unchanged for any closing char (since PAIRS["]"] is
+   *      undefined), making `handleSkipOver` dead code — every "type `)` to
+   *      step out of an empty pair" silently fell through to the browser's
+   *      native insert and produced `()`→`())`.
+   *   2. opening-char insert (single char in PAIRS as a key)
+   *   3. backspace
    */
   process(inputType: string, data: string | null, ctx: PairContext): PairResult {
     if (inputType === 'insertText' && data && data.length === 1) {
+      // Closing char (the caret sits before a matching close char and the
+      // user typed it again) wins over the generic opening insert.
+      if (this.isCloseChar(data)) {
+        const skip = this.handleSkipOver(data, ctx);
+        if (skip.preventDefault) return skip;
+      }
+      // Opening char: insert both halves and park the caret in the middle.
       return this.handleOpenChar(data, ctx);
-    }
-    if (inputType === 'insertText' && data && this.isCloseChar(data)) {
-      return this.handleSkipOver(data, ctx);
     }
     if (inputType === 'deleteContentBackward') {
       return this.handleBackspace(ctx);
