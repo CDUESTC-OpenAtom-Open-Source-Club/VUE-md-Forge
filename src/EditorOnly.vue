@@ -57,6 +57,8 @@ import {
   insertLink,
   insertImage as insertImagePrompt
 } from '@/core/DomActions';
+import { attachKeyboardShortcuts } from '@/core/KeyboardShortcuts';
+import { promptAndBuildTable } from '@/core/TableBuilder';
 
 const engine = new MarkdownEngine();
 const pair = new PairCompleter();
@@ -250,9 +252,16 @@ function doCode() {
     insertText(el, '\n\n```\ncode\n```\n\n');
   });
 }
+function doInlineCode() {
+  runOnTextarea((el) => wrapSelection(el, '`', '`', 'code'));
+}
 function doTable() {
+  // Sequential-prompt UX (Phase-1 placeholder).  Phase-1 quick-win #2 will
+  // replace the three `prompt()` calls with the unified Dialog engine.
+  const body = promptAndBuildTable();
+  if (!body) return;
   runOnTextarea((el) => {
-    insertText(el, '\n\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| A1 | A2 | A3 |\n| B1 | B2 | B3 |\n\n');
+    insertText(el, '\n\n' + body + '\n\n');
   });
 }
 function doUl() {
@@ -319,14 +328,8 @@ function scrollToTop() {
 }
 
 // ── keyboard shortcuts ────────────────────────────────────────────────
-function onKeydown(e: KeyboardEvent) {
-  if (!(e.ctrlKey || e.metaKey)) return;
-  const k = e.key.toLowerCase();
-  if (k === 'b') { e.preventDefault(); doBold(); }
-  else if (k === 'i') { e.preventDefault(); doItalic(); }
-  else if (k === 'k') { e.preventDefault(); doLink(); }
-  else if (k === 's') { e.preventDefault(); scheduleSave(); flashToast('已保存', 'ok'); }
-}
+// Ref counted so onMounted / onBeforeUnmount can attach and detach cleanly.
+let detachShortcuts: (() => void) | null = null;
 function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && showInfo.value) {
     e.preventDefault();
@@ -396,9 +399,35 @@ function onDrop(e: DragEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown);
+  const ta = textareaRef.value;
+  if (ta) {
+    detachShortcuts = attachKeyboardShortcuts(ta, {
+      bold: doBold,
+      italic: doItalic,
+      strikethrough: doStrike,
+      save: () => {
+        scheduleSave();
+        flashToast('已保存', 'ok');
+      },
+      link: doLink,
+      image: doImage,
+      code: doCode,
+      inlineCode: doInlineCode,
+      table: doTable,
+      ul: doUl,
+      ol: doOl,
+      h1: () => doHeading(1),
+      h2: () => doHeading(2),
+      h3: () => doHeading(3),
+      h4: () => doHeading(4),
+      h5: () => doHeading(5),
+      h6: () => doHeading(6)
+    });
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown);
+  if (detachShortcuts) detachShortcuts();
   if (saveTimer !== null) window.clearTimeout(saveTimer);
   if (pulseTimer !== null) window.clearTimeout(pulseTimer);
 });
@@ -495,7 +524,6 @@ defineExpose({ scrollToTop });
             spellcheck="false"
             placeholder="在这里输入 Markdown…（Ctrl+B I K，粗体 / 斜体 / 链接）"
             @beforeinput="onBeforeInput"
-            @keydown="onKeydown"
             @input="(e) => { content = (e.target as HTMLTextAreaElement).value; scheduleSave(); }"
             @paste="onPaste"
             @scroll="onSourceScroll"
@@ -713,8 +741,8 @@ defineExpose({ scrollToTop });
 .eo-rendered :deep(table) { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
 .eo-rendered :deep(th), .eo-rendered :deep(td) { border: 1px solid var(--mdf-line, #d0d7de); padding: 6px 10px; text-align: left; }
 .eo-rendered :deep(th) { background: var(--mdf-code-bg, #f6f8fa); }
-.eo-rendered :deep(tr:nth-child(even) td) { background: #fafbfc; }
-.eo-rendered :deep(blockquote) { margin: 0.8em 0; padding: 4px 12px; border-left: 3px solid var(--mdf-accent, #4183c4); color: var(--mdf-muted, #6e7781); background: #f6f8fa; border-radius: 0 4px 4px 0; }
+.eo-rendered :deep(tr:nth-child(even) td) { background: var(--mdf-hover, #f3f4f6); }
+.eo-rendered :deep(blockquote) { margin: 0.8em 0; padding: 4px 12px; border-left: 3px solid var(--mdf-accent, #4183c4); color: var(--mdf-muted, #6e7781); background: var(--mdf-code-bg, #f6f8fa); border-radius: 0 4px 4px 0; }
 .eo-rendered :deep(.katex) { font-size: 1.05em; }
 
 /* hide-preview overrides the .eo-preview display rule above */

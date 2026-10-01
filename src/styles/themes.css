@@ -7,13 +7,28 @@
  *   </div>
  *
  * Or use the public MdEditor component which forwards v-model:theme for you.
+ *
+ * Color philosophy (since 2026-10-01 tweak):
+ *   - Light theme: foreground is near-pure black (#0d1117, GitHub text fg) —
+ *     guaranteed "looks black" against off-white backgrounds, WCAG AAA on
+ *     #fafafa / #ffffff.
+ *   - Dark theme:  foreground is light gray (#e6e6e6, not pure white) so
+ *     bold / heading highlights don't strobe. Code-block background is a
+ *     subtle elevated shade (#262626), distinguishable from page bg
+ *     (#1e1e1e) but never bright. Accent blues (#6cb6ff / #4183c4) stay
+ *     saturated enough for affordance, only overlays were softened.
+ *   - `color-scheme` is declared on each theme so form controls / scrollbars
+ *     / autofill paint with the right palette instead of falling back to
+ *     browser defaults.
  */
 
 :root,
 [data-mdf-theme='typora-light'] {
+  color-scheme: light;
+
   --mdf-bg: #fafafa;
   --mdf-bg-elev: #ffffff;
-  --mdf-fg: #1f2328;
+  --mdf-fg: #0d1117;
   --mdf-muted: #6e7781;
   --mdf-line: #d0d7de;
   --mdf-pane-bg: #ffffff;
@@ -28,8 +43,8 @@
   --mdf-emphasis: #5a3e9a;
   --mdf-warning: #cf222e;
   --mdf-success: #1a7f37;
-  --mdf-overlay-text-color: #1f2328;
-  --mdf-overlay-bold: #1f2328;
+  --mdf-overlay-text-color: #0d1117;
+  --mdf-overlay-bold: #0d1117;
   --mdf-overlay-italic: #5a3e9a;
   --mdf-overlay-heading: #4183c4;
   --mdf-overlay-link: #1f6feb;
@@ -39,39 +54,41 @@
   --mdf-overlay-quote: #6e7781;
   --mdf-overlay-hr: #d0d7de;
   --mdf-overlay-list: #4183c4;
-  --mdf-overlay-codeblock: #6e7781;
+  --mdf-overlay-codeblock: #57606a;
   --mdf-overlay-codeblock-bg: #f6f8fa;
 }
 
 [data-mdf-theme='typora-dark'] {
+  color-scheme: dark;
+
   --mdf-bg: #1e1e1e;
-  --mdf-bg-elev: #252526;
-  --mdf-fg: #d4d4d4;
-  --mdf-muted: #858585;
+  --mdf-bg-elev: #2a2a2a;
+  --mdf-fg: #e6e6e6;
+  --mdf-muted: #9a9a9a;
   --mdf-line: #2d2d2d;
-  --mdf-pane-bg: #252526;
-  --mdf-hover: #2a2d2e;
-  --mdf-gutter-bg: #181818;
-  --mdf-code-bg: #1e1e1e;
+  --mdf-pane-bg: #2a2a2a;
+  --mdf-hover: #323232;
+  --mdf-gutter-bg: #1a1a1a;
+  --mdf-code-bg: #262626;
   --mdf-accent: #6cb6ff;
   --mdf-accent-soft: #1f3a5c;
   --mdf-link: #6cb6ff;
-  --mdf-quote: #858585;
+  --mdf-quote: #9a9a9a;
   --mdf-list-marker: #6cb6ff;
   --mdf-emphasis: #c586c0;
   --mdf-warning: #f48771;
   --mdf-success: #89d185;
-  --mdf-overlay-text-color: #d4d4d4;
-  --mdf-overlay-bold: #ffffff;
+  --mdf-overlay-text-color: #e6e6e6;
+  --mdf-overlay-bold: #e6e6e6;
   --mdf-overlay-italic: #c586c0;
   --mdf-overlay-heading: #6cb6ff;
   --mdf-overlay-link: #6cb6ff;
   --mdf-overlay-code-text: #f48771;
   --mdf-overlay-code-bg: rgba(244, 135, 113, 0.12);
   --mdf-overlay-math: #f48771;
-  --mdf-overlay-quote: #858585;
+  --mdf-overlay-quote: #9a9a9a;
   --mdf-overlay-hr: #404040;
   --mdf-overlay-list: #6cb6ff;
-  --mdf-overlay-codeblock: #9cdcfe;
-  --mdf-overlay-codeblock-bg: #1e1e1e;
+  --mdf-overlay-codeblock: #c8c8c8;
+  --mdf-overlay-codeblock-bg: #262626;
 }
