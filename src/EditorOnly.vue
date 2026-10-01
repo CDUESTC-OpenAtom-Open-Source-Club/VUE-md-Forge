@@ -144,52 +144,109 @@ const stats = computed(() => {
 });
 
 /**
- * Visual line count (logical lines + any wrap-induced rows the textarea
- * actually renders). Driven by `textarea.scrollHeight` because that's
- * what the browser commits after it lays out every soft-wrap. Without
- * this, long KaTeX / code lines would fall off the bottom of the gutter
- * while still being visible inside the textarea.
+ * Per-logical-line gutter row heights. Each entry is the height (px) the
+ * corresponding logical line occupies in the textarea AFTER wrap. A long
+ * KaTeX / code line that wraps to two visual rows gets `2 × lineHeight`,
+ * not a new digit — the gutter stays at `logicalLines` rows in total,
+ * just like the source. Driven by an off-screen `<div>` that we feed
+ * the exact same CSS as the textarea; the browser lays it out with the
+ * same wrapping rules, so the measurement is pixel-accurate.
  */
-const visualLineCount = ref(0);
-function recomputeVisualLines() {
+const gutterLineHeights = ref<number[]>([]);
+let measureEl: HTMLDivElement | null = null;
+
+function ensureMeasureEl(): HTMLDivElement | null {
+  if (typeof document === 'undefined') return null;
+  if (measureEl && measureEl.isConnected) return measureEl;
+  const div = document.createElement('div');
+  div.setAttribute('aria-hidden', 'true');
+  Object.assign(div.style, {
+    position: 'absolute',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    left: '-9999px',
+    top: '0',
+    margin: '0',
+    border: '0',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
+    boxSizing: 'border-box'
+  });
+  document.body.appendChild(div);
+  measureEl = div;
+  return div;
+}
+
+function recomputeGutterHeights() {
   const ta = textareaRef.value;
-  if (!ta) {
-    visualLineCount.value = stats.value.logicalLines;
+  const meas = ensureMeasureEl();
+  if (!ta || !meas) {
+    gutterLineHeights.value = [];
     return;
   }
   const cs = getComputedStyle(ta);
-  const lh = parseFloat(cs.lineHeight);
-  if (!Number.isFinite(lh) || lh <= 0) {
-    visualLineCount.value = stats.value.logicalLines;
-    return;
-  }
+  // Mirror every text-rendering CSS prop the browser uses for the textarea
+  // so the measurement div wraps identically.
+  meas.style.width = ta.clientWidth + 'px';
+  meas.style.fontSize = cs.fontSize;
+  meas.style.fontFamily = cs.fontFamily;
+  meas.style.fontWeight = cs.fontWeight;
+  meas.style.fontStyle = cs.fontStyle;
+  meas.style.lineHeight = cs.lineHeight;
+  meas.style.letterSpacing = cs.letterSpacing;
+  meas.style.wordSpacing = cs.wordSpacing;
+  meas.style.tabSize = cs.tabSize;
+  meas.style.paddingLeft = cs.paddingLeft;
+  meas.style.paddingRight = cs.paddingRight;
+  meas.style.paddingTop = cs.paddingTop;
+  meas.style.paddingBottom = cs.paddingBottom;
+
+  const logicals = content.value.length === 0 ? [''] : content.value.split('\n');
   const pt = parseFloat(cs.paddingTop) || 0;
   const pb = parseFloat(cs.paddingBottom) || 0;
-  const inner = ta.scrollHeight - pt - pb;
-  // Round up so any partial trailing line still gets its own gutter row.
-  const visual = Math.max(1, Math.ceil(inner / lh));
-  visualLineCount.value = Math.max(stats.value.logicalLines, visual);
+  const lh = parseFloat(cs.lineHeight) || 21.6;
+
+  const measured = logicals.map((line) => {
+    // Empty line: still give it at least one line of height so it shows up.
+    meas.textContent = line.length === 0 ? '​' : line;
+    return Math.max(lh, meas.scrollHeight - pt - pb);
+  });
+
+  // Normalise against the textarea's actual content height so cumulative
+  // rounding in the measurement div can't drift the gutter shorter or
+  // taller than the source pane.
+  const totalMeas = measured.reduce((a, b) => a + b, 0);
+  const taContent = ta.scrollHeight - pt - pb;
+  if (totalMeas > 0 && Math.abs(totalMeas - taContent) > 0.5) {
+    const factor = taContent / totalMeas;
+    gutterLineHeights.value = measured.map((h) => h * factor);
+  } else {
+    gutterLineHeights.value = measured;
+  }
 }
-// Re-measure after every content change (DOM updates are async — wait a tick).
+// Re-measure after content changes (DOM update is async — wait a tick).
 watch(
   () => content.value,
-  () => { void nextTick(recomputeVisualLines); },
+  () => { void nextTick(recomputeGutterHeights); },
   { flush: 'post', immediate: true }
 );
-// Plus a ResizeObserver for window/container resizes.
+// And after viewport / container resizes.
 let gutterRO: ResizeObserver | null = null;
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined' && textareaRef.value) {
-    gutterRO = new ResizeObserver(() => recomputeVisualLines());
+    gutterRO = new ResizeObserver(() => recomputeGutterHeights());
     gutterRO.observe(textareaRef.value);
   }
 });
 onBeforeUnmount(() => {
   gutterRO?.disconnect();
+  measureEl?.remove();
+  measureEl = null;
 });
 
 const lineNumbers = computed(() =>
-  Array.from({ length: visualLineCount.value || stats.value.logicalLines }, (_, i) => i + 1)
+  Array.from({ length: stats.value.logicalLines }, (_, i) => i + 1)
 );
 
 const highlighted = computed(() => {
@@ -579,7 +636,12 @@ defineExpose({ scrollToTop });
       <!-- source pane -->
       <section class="eo-source" v-show="viewMode !== 'full'">
         <div ref="gutterRef" class="eo-gutter" aria-hidden="true">
-          <div v-for="n in lineNumbers" :key="n" class="eo-line-no">{{ n }}</div>
+          <div
+            v-for="(n, i) in lineNumbers"
+            :key="n"
+            class="eo-line-no"
+            :style="{ height: (gutterLineHeights[i] ?? 0) + 'px' }"
+          >{{ n }}</div>
         </div>
         <div class="eo-source-stack">
           <pre
@@ -611,7 +673,7 @@ defineExpose({ scrollToTop });
     <footer class="eo-status">
       <span :class="['eo-chars', { warn: stats.warning }]">{{ stats.chars }} 字符</span>
       <span class="eo-sep-dot">·</span>
-      <span>{{ visualLineCount || stats.logicalLines }} 行</span>
+      <span>{{ stats.logicalLines }} 行</span>
       <span class="eo-sep-dot">·</span>
       <span>{{ stats.words }} 词</span>
       <span class="eo-sep-dot">·</span>
