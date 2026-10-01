@@ -21,7 +21,16 @@ function asTheme(v: string): ThemeValue {
 
 const props = withDefaults(
   defineProps<{
-    modelValue: string;
+    /**
+     * Optional. Pass nothing (or an empty string) for an uncontrolled
+     * editor that manages its own draft. Pass a non-empty value AND wire
+     * `v-model` to opt into controlled mode where the parent owns the
+     * content. Empty `modelValue` is treated the same as omitting the
+     * prop because every host we tested that uses `:modelValue=""` is
+     * NOT listening for `@update:modelValue`, which under v-model
+     * semantics would mean their input gets wiped on the next tick.
+     */
+    modelValue?: string;
     theme?: string;
   }>(),
   { theme: 'typora-light' }
@@ -36,11 +45,20 @@ const themeProxy = computed({
   get: (): ThemeValue => asTheme(props.theme),
   set: (v: ThemeValue) => emit('update:theme', v)
 });
+
+// Treat empty string as "no modelValue": let EditorOnly run uncontrolled
+// so its internal state (with `initial` + localStorage) survives even
+// when the parent isn't echoing updates back. See issue #2.
+const effectiveModelValue = computed<string | undefined>(() => {
+  if (props.modelValue === undefined) return undefined;
+  if (props.modelValue === '') return undefined;
+  return props.modelValue;
+});
 </script>
 
 <template>
   <EditorOnly
-    :model-value="props.modelValue"
+    :model-value="effectiveModelValue"
     :theme="themeProxy"
     @update:model-value="(v) => emit('update:modelValue', v)"
     @update:theme="(v) => (themeProxy = v as ThemeValue)"
