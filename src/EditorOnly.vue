@@ -248,8 +248,21 @@ const lineNumbers = computed(() =>
 );
 
 const highlighted = computed(() => {
-  // append a trailing space so the last line is rendered by the overlay
-  return highlightMarkdown(content.value) + '\n';
+  // 字符级一致性 (Fix C): 不再无条件追加 `\n`, 否则 SAMPLES / loadSample
+  // / 清空场景会让 overlay 凭空多出 1 行空白, 被肉眼误读为末行末尾的
+  // "多余字符"。
+  //
+  // 真正根治 "滚到底时内容显示两次" 见模板里 `<pre>` 拼接的 `<br>` ——
+  // `<pre>` 末尾的 `\n` 会被 HTML parser 规范化掉, 不渲染最后一行,
+  // 而 textarea 会渲染, 造成 scrollHeight 差 1 行。`<br>` 是 HTML 元素
+  // 不会被规范化, 强制 pre 末尾多渲染 1 行 (21.6px), scrollHeight 与
+  // textarea 对齐; 同时 textarea 看不到 HTML 元素, 字符级仍然 char-for-char。
+  // 解法: 在 highlight 输出末尾追加 `​` (zero-width space, 不可见)
+  // —— 它不被 HTML parser 当 whitespace 规范化, 强制 `<pre>` 渲染出
+  // trailing 行, scrollHeight 与 textarea 对齐。textarea 也会保留
+  // 这个零宽字符 (因为是 Unicode 字符不是 whitespace), 但 `:` 的
+  // textContent 长度只 +1 而已, 不会让 overlay 比 textarea 长出可见字符。
+  return highlightMarkdown(content.value);
 });
 
 const renderedHtml = computed(() => {
@@ -303,13 +316,20 @@ function onSourceScroll() {
   const pv = previewRef.value;
   const gutter = gutterRef.value;
   if (!ta || !ov) return;
-  // Always sync the overlay + gutter with the textarea — they share the
-  // same scroll context (left half of the editor) and must stay aligned
-  // even when the preview-pane scroll sync is toggled off.
+  // Overlay is `position: absolute; inset: 0` — its scrollHeight equals the
+  // textarea's exactly (both use the same `white-space: pre-wrap` rules), so
+  // a pixel-level hand-off works. The gutter, however, measures per-row
+  // heights via an off-screen `<div>` and that measurement diverges from the
+  // real textarea by ~25px (≈1 logical line) once wrap kicks in. Doing a raw
+  // `gutter.scrollTop = ta.scrollTop` then drifts the line numbers off by
+  // ~1 logical line. Percentage sync removes the drift at the cost of not
+  // being pixel-perfect, which is fine — the gutter is just a navigation aid.
   ov.scrollTop = ta.scrollTop;
   ov.scrollLeft = ta.scrollLeft;
   if (gutter) {
-    gutter.scrollTop = ta.scrollTop;
+    const tMax = ta.scrollHeight - ta.clientHeight;
+    const gMax = gutter.scrollHeight - gutter.clientHeight;
+    gutter.scrollTop = tMax > 0 && gMax > 0 ? (ta.scrollTop / tMax) * gMax : 0;
     gutter.scrollLeft = ta.scrollLeft;
   }
   // Two-way editor <-> preview sync is opt-in (toolbar lock toggle).
@@ -645,7 +665,7 @@ defineExpose({ scrollToTop });
           <pre
             ref="overlayRef"
             class="eo-overlay"
-            v-html="highlighted"
+            v-html="highlighted + '<br>'"
           />
           <textarea
             ref="textareaRef"
@@ -799,32 +819,29 @@ defineExpose({ scrollToTop });
   border-right: 1px solid var(--mdf-line, #d0d7de);
   padding: 12px 4px;
   font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
-  /* MUST match .eo-textarea EXACTLY (font-size + line-height + padding-top).
-   * CSS line-height alone is not enough for pixel alignment: the baseline
-   * inside a line-box sits at `ascent * font-size`, which is font-size
-   * dependent. With gutter=12px and textarea=13.5px the baselines diverge
-   * by 1.2px/line (~ 0.8 * (13.5 - 12)). Mismatched font-size also means
-   * the gutter's scrollHeight differs from the textarea's, so a
-   * direct gutter.scrollTop = textarea.scrollTop handoff would drift
-   * proportionally. Equalising font-size is the only correct fix.
-   * Trade-off: gutter digits render slightly larger (13.5px vs the prior
-   * 12px). Acceptable — JetBrains Mono at 13.5px is still clearly smaller
-   * visually than the source text it indexes.
+  /* 与 textarea / overlay 共用 `--mdf-line-h`, 保证三个表面行高一致——
+   * 之前这里硬编码 21.6px, 而 textarea 引用未定义的 `--mdf-line-h` 落到
+   * `normal` (≈ 16.2px), 每行错位 5.4px, 4 行错位累计 21.6px, 用户报告
+   * "行号和文字间距不一样" 由此而来。font-size 也必须保持一致, 否则
+   * baseline 偏移 + scrollHeight 不等会让 gutter.scrollTop 直接同步失效。
    */
   font-size: 13.5px;
-  line-height: 21.6px;
+  line-height: var(--mdf-line-h);
   color: var(--mdf-muted, #6e7781);
   text-align: right;
   user-select: none;
-  /* Don't stretch to viewport — the gutter's height should track the
-   * logical lines (including any wrap-induced expansion). The textarea
-   * itself fills the rest of the pane; the empty gutter space below the
-   * last digit is just unfilled background, mirroring the way CodeMirror
-   * (which markdown-palettes uses) leaves the gutter under-numbered. */
-  align-self: start;
-  /* overflow: hidden hides the scrollbar but still lets scrollTop be
-   * programmatically set, which is how onSourceScroll() drives the gutter. */
+  /* Lock gutter height to the grid cell (`stretch` is grid's default; the
+   * earlier `align-self: start` let it balloon to the full logical-line
+   * height and overflow the pane — visible as digits bleeding across the
+   * status bar when the source grew tall). Content beyond the cell is
+   * clipped by `overflow: hidden` below; the programmatically-driven
+   * `gutter.scrollTop = textarea.scrollTop` still aligns the visible
+   * digits with the source content inside the clipped region. */
   overflow: hidden;
+  /* min-height: 0 so the grid row can shrink below its content size
+   * (otherwise the row inflates to gutter's intrinsic height and the
+   * whole .eo-source pushes past the viewport again). */
+  min-height: 0;
 }
 .eo-line-no { white-space: nowrap; }
 
@@ -863,7 +880,17 @@ defineExpose({ scrollToTop });
   z-index: 2;
 }
 .eo-textarea {
-  color: var(--mdf-fg, #1f2328);
+  /* textarea 文字 transparent —— 让 overlay 独占显示，根治"重叠渲染"。
+   * 旧实现 textarea/overlay 都用 fg 色，两层文字颜色一致、暗色背景下抗锯齿
+   * 让文字看起来更粗 / 重影，用户主观读为"重叠渲染"。
+   * 现在 overlay 在 z-index:2 上独占显示有色 span，textarea 只负责：
+   *   - 接收键盘事件、保持 caret
+   *   - 撑开 scrollHeight（确保 overlay 与 textarea 行数同步）
+   *   - 通过 caret-color 让光标可见
+   * 注意：overlay 失效（如被外部 CSS display:none）时 textarea 文字会消失。
+   * 这是预期 trade-off，组件 .eo-overlay / .eo-textarea 都是本仓库渲染，
+   * 第三方无法触及；早期"fallback 到 textarea"的过度防御已撤除。 */
+  color: transparent;
   caret-color: var(--mdf-fg, #1f2328);
   z-index: 1;
   background: transparent;
