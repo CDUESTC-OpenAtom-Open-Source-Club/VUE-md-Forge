@@ -82,14 +82,27 @@ const emit = defineEmits<{
 
 // `content` is the live editor state. When `modelValue` is provided, the parent
 // is the source of truth (controlled mode). Otherwise the component is the
-// source of truth and falls back to `initial` then localStorage.
-const internal = ref<string>(props.modelValue ?? props.initial ?? localStorage.getItem(STORAGE_KEY) ?? '');
+// source of truth and falls back to `initial` (no localStorage here — reading
+// localStorage in setup() is what causes 'theme toggle wipes content' when the
+// host uses `:key="theme"` to force a remount on theme change: setup() runs
+// again, localStorage is empty on a fresh page, internal resets to '' and the
+// user's previous content is gone).
+const initialSource: string = props.modelValue ?? props.initial ?? '';
+const internal = ref<string>(initialSource);
 const controlled = computed(() => props.modelValue !== undefined);
 const content = computed<string>({
   get: () => (controlled.value ? (props.modelValue as string) : internal.value),
   set: (v) => {
     if (controlled.value) emit('update:modelValue', v);
     else internal.value = v;
+  }
+});
+// When the host flips from uncontrolled to controlled (rare but happens when
+// the parent only later starts passing modelValue), pull the current internal
+// state into the new modelValue so the user doesn't lose what they typed.
+watch(controlled, (nowControlled) => {
+  if (nowControlled && internal.value !== initialSource) {
+    emit('update:modelValue', internal.value);
   }
 });
 
@@ -728,12 +741,18 @@ defineExpose({ scrollToTop });
 .eo-overlay {
   pointer-events: none;
   color: var(--mdf-fg, #1f2328);
-  z-index: 1;
+  /* Overlay sits ABOVE the textarea so its coloured token spans show
+   * through. The textarea's own text is no longer transparent — that
+   * old design was brittle: any host CSS that hid or restyled .eo-overlay
+   * (display:none, negative z-index, pre { color: white }, etc.) made
+   * every keystroke invisible. Now the textarea carries its own fg colour
+   * as a baseline, and the overlay just paints coloured spans on top. */
+  z-index: 2;
 }
 .eo-textarea {
-  color: transparent;
+  color: var(--mdf-fg, #1f2328);
   caret-color: var(--mdf-fg, #1f2328);
-  z-index: 2;
+  z-index: 1;
   background: transparent;
 }
 .eo-textarea::placeholder { color: var(--mdf-muted, #6e7781); opacity: 0.6; }
