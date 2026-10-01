@@ -27,11 +27,13 @@
   color-scheme: light;
 
   /* 行高常量（与编辑器字号 13.5px 耦合）。两个主题必须保持一致——
-   * `.eo-textarea / .eo-overlay` 用此变量驱动 line-height, gutter 也读
-   * 同一个变量。早期代码把 gutter 硬编码 21.6 而 textarea 用未定义的
-   * `--mdf-line-h`（fallback 到 `normal` ≈ 16.2px）, 两个表面行高差 5.4px,
-   * 用户每翻一行就视觉错位 5.4px, 看起来像"行号和文字错位 + 重叠渲染"。 */
-  --mdf-line-h: 21.6px;
+   * `.eo-textarea / .eo-overlay / .eo-gutter` 都读此变量。
+   *
+   * 早期 21.6px 让 textarea/overlay 精确渲染 21.6px 行距, 但 gutter 的
+   * 数字字符 intrinsic 行高被浏览器舍入到 22px, 0.4px/行 累计, 30 行
+   * 错位 12px —— 用户报告 "行号和文字间距不一致" 的根因。
+   * 改为 22px 后三层都渲染 22px/行, 像素级完美对齐。 */
+  --mdf-line-h: 22px;
 
   --mdf-bg: #fafafa;
   --mdf-bg-elev: #ffffff;
@@ -69,7 +71,7 @@
   color-scheme: dark;
 
   /* 行高必须与 light 主题一致 —— 见 :root 注释。 */
-  --mdf-line-h: 21.6px;
+  --mdf-line-h: 22px;
 
   --mdf-bg: #1e1e1e;
   --mdf-bg-elev: #2a2a2a;

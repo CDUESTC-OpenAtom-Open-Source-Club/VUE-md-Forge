@@ -744,11 +744,12 @@ defineExpose({ scrollToTop });
   background: var(--mdf-bg, #fafafa);
   color: var(--mdf-fg, #1f2328);
   font-family: var(--mdf-font-sans, 'Noto Sans SC', system-ui, sans-serif);
-  /* Shared line-height (in px, NOT unitless) so that the gutter and the
-   * textarea agree on "what is line N". A unitless line-height + differing
-   * font-sizes would scale to different pixel heights, causing the gutter
-   * to drift off the source text as the user scrolls. */
-  --mdf-line-h: 21.6px;
+  /* 行高常量从 :root / data-mdf-theme 继承, 不在此处覆盖 —— 早期这里硬编
+   * 码 21.6px 反而把 themes.css 里的 22px 覆盖掉, gutter 和 overlay 的
+   * 实际渲染 step 不一致 (gutter=22 overlay=21.6, 0.4px/行累计错位)。
+   * 行高 (in px, NOT unitless) 的目的：让 gutter / textarea / overlay
+   * 三个表面用同一像素步进, 避免不同 font-size 下 unitless 计算出不同
+   * 像素高度。 */
 }
 
 /* ── toolbar ────────────────────────────────────────────────────────── */
@@ -817,15 +818,19 @@ defineExpose({ scrollToTop });
 .eo-gutter {
   background: var(--mdf-gutter-bg, #f6f8fa);
   border-right: 1px solid var(--mdf-line, #d0d7de);
-  padding: 12px 4px;
-  font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
+  /* gutter padding-top 比 textarea 大 2px (14 vs 12), 抵消 JetBrains Mono
+   * 数字字符 baseline 比字母高的 intrinsic 差异 (数字 x-height 略低 +
+   * 无 descender, bbox 顶部比 "#/A" 等字母低 2-3px)。视觉上数字字符与
+   * textarea 字母字符顶部精确对齐, 不再有行号"下沉"错觉。 */
+  padding: 14px 4px 12px;
+  font-family: var(--mdf-font-mono, 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace);
   /* 与 textarea / overlay 共用 `--mdf-line-h`, 保证三个表面行高一致——
    * 之前这里硬编码 21.6px, 而 textarea 引用未定义的 `--mdf-line-h` 落到
    * `normal` (≈ 16.2px), 每行错位 5.4px, 4 行错位累计 21.6px, 用户报告
-   * "行号和文字间距不一样" 由此而来。font-size 也必须保持一致, 否则
-   * baseline 偏移 + scrollHeight 不等会让 gutter.scrollTop 直接同步失效。
+   * "行号和文字间距不一样" 由此而来。font-size 也必须保持一致 (14.5px),
+   * 否则 baseline 偏移 + scrollHeight 不等会让 gutter.scrollTop 同步失效。
    */
-  font-size: 13.5px;
+  font-size: 14.5px;
   line-height: var(--mdf-line-h);
   color: var(--mdf-muted, #6e7781);
   text-align: right;
@@ -855,8 +860,15 @@ defineExpose({ scrollToTop });
   inset: 0;
   margin: 0;
   padding: 12px 14px;
-  font-family: var(--mdf-font-mono, 'JetBrains Mono', monospace);
-  font-size: 13.5px;
+  /* VSCode 风格 monospace 字体栈 —— Cascadia Code (Win11/Mac 自带, 微软
+   * 为 VSCode 设计) 优先, 其次 JetBrains Mono (开发圈最流行), 最后
+   * Consolas / Menlo / Courier New 兜底。Web 加载用 Google Fonts 的
+   * JetBrains Mono 已生效, 离线 fallback 仍能拿到 Consolas。 */
+  font-family: var(--mdf-font-mono, 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace);
+  /* 字号从 13.5 增到 14.5 —— 用户反馈代码框可读性差, 增大后字符更易辨认。
+   * 三层 (textarea / overlay / gutter) 必须保持同一 font-size, 否则
+   * baseline 偏移 + scrollHeight 不等会让 gutter 与 textarea 行号错位。 */
+  font-size: 14.5px;
   line-height: var(--mdf-line-h);
   letter-spacing: 0;
   tab-size: 2;
@@ -925,7 +937,7 @@ defineExpose({ scrollToTop });
 .eo-rendered :deep(a) { color: var(--mdf-accent, #4183c4); text-decoration: none; }
 .eo-rendered :deep(a:hover) { text-decoration: underline; }
 .eo-rendered :deep(code) { font-family: var(--mdf-font-mono); background: var(--mdf-code-bg, #f6f8fa); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
-.eo-rendered :deep(pre) { background: var(--mdf-code-bg, #f6f8fa); border: 1px solid var(--mdf-line, #d0d7de); border-radius: 6px; padding: 12px 14px; overflow: auto; font-size: 12.5px; }
+.eo-rendered :deep(pre) { background: var(--mdf-code-bg, #f6f8fa); border: 1px solid var(--mdf-line, #d0d7de); border-radius: 6px; padding: 12px 14px; overflow: auto; font-size: 14px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace; line-height: 1.55; }
 .eo-rendered :deep(table) { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
 .eo-rendered :deep(th), .eo-rendered :deep(td) { border: 1px solid var(--mdf-line, #d0d7de); padding: 6px 10px; text-align: left; }
 .eo-rendered :deep(th) { background: var(--mdf-code-bg, #f6f8fa); }
