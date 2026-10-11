@@ -19,7 +19,7 @@
 
 - **Pages 根路径 404**：`dist-demo/` 之前只有 `preview.html` 与 `editor-only.html`，访问 `https://<org>.github.io/VUE-md-Forge/` 直接 404。新增 demo landing `index.html`（暗色主题适配 + 两张入口卡片），`vite.config.ts` demo 模式加入 `index` rollup input，`npm run build` 现在生成三个 HTML。
 - **Pages site 未初始化**（org-level 平台限制）：部分 GitHub org（尤其 Enterprise trial）即便 repo-level Source = GitHub Actions 已保存，`GET /pages` 仍 404，导致 `deploy-pages@v4` 首次报 `Failed to create deployment`。workflow deploy job 前置 `gh api` best-effort 探测 + 创建：`GET /pages` 200 直接跳过；404 调 `POST /pages`（`build_type=workflow` / `source=main//`）尝试自举；权限不足则 `::warning::` 打印「Settings → Pages → Source 临时切 Branch + Save + 切回 Actions + Re-run」三步 UI 操作。
-- **README 顶部 banner 撤回**：`🟢 在线演示` 链接在 site init 之前是 dead link，已删除；「部署」章节保留首次启用说明。
+- **README 顶部 banner 撤回 → 恢复**：合并后 workflow 自举成功（`https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/` HTTP 200，size = `dist-demo/index.html` 4587 B），临时撤掉的 `🟢 在线演示` banner 恢复（指向部署章节）/ 跳转链接。
 
 ---
 
