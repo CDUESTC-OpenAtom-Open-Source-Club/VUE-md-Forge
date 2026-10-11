@@ -9,10 +9,6 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6)
 ![FontAwesome](https://img.shields.io/badge/FontAwesome-5-528dd7)
 
-> 🟢 **在线演示**：[https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/](https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/)（main 分支每次 push 由 GitHub Actions 自动部署，启用步骤见下方「部署」章节）
->
-> **首次启用需要仓库管理员在 Settings → Pages → Source 选 "GitHub Actions"**（一次性配置）。
-
 ---
 
 ## 这是什么

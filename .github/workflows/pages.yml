@@ -1,7 +1,7 @@
 name: GitHub Pages
 
-# Deploy the demo site (preview.html + editor-only.html) to GitHub Pages on
-# every push to main. After the first merge, enable Pages in
+# Deploy the demo site (preview.html + editor-only.html + index.html) to
+# GitHub Pages on every push to main. After the first merge, enable Pages in
 #   Settings → Pages → Source = GitHub Actions
 # so this workflow has somewhere to land. Subsequent pushes auto-deploy.
 
@@ -53,5 +53,41 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      # Some GitHub orgs (notably Enterprise orgs in trial) start with no Pages
+      # site object even after the repo-level Source is set in the UI.
+      # deploy-pages@v4 then 404s on its first POST /pages/deployments.
+      # Best-effort: try to bootstrap the site via the Pages API. If the
+      # GITHUB_TOKEN lacks admin perms (typical for collaborator forks), the
+      # step warns and falls through to deploy-pages@v4 which surfaces the
+      # exact 404 message in the Actions log.
+      - name: Ensure Pages site exists
+        id: init
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATUS=$(gh api -X GET "/repos/${{ github.repository }}/pages" \
+                     --silent -o /dev/null -w '%{http_code}' || echo 000)
+          echo "site_status=$STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "Pages site not yet initialized; attempting bootstrap via API..."
+          if gh api -X POST "/repos/${{ github.repository }}/pages" \
+                -f build_type=workflow \
+                -f 'source[branch]=main' \
+                -f 'source[path]=/' \
+                --silent -o /dev/null -w '%{http_code}'; then
+            echo "Bootstrap succeeded; deploy-pages@v4 will publish on this run."
+          else
+            echo "::warning::Bootstrap failed (GITHUB_TOKEN likely lacks admin perms)."
+            echo "::warning::Manual one-time init required:"
+            echo "::warning::  repo Settings → Pages → Source → choose any Branch option"
+            echo "::warning::  → Save → wait 30s → switch back to 'GitHub Actions' → Save"
+            echo "::warning::  → Re-run this workflow from the Actions tab."
+          fi
+
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

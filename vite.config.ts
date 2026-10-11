@@ -5,8 +5,9 @@ import vue from '@vitejs/plugin-vue';
 /**
  * Two build targets share one config:
  *
- * - default mode: demo site with two HTML entries
- *     index.html        -> full demo overview
+ * - default mode: demo site with three HTML entries
+ *     index.html        -> demo landing page (served at /VUE-md-Forge/)
+ *     preview.html      -> dual-pane source / rendered preview
  *     editor-only.html  -> standalone dual-pane editor window
  * - `--mode lib`: library bundle for npm consumers (vue stays external)
  */
@@ -52,6 +53,7 @@ export default defineConfig(({ mode }) => {
           outDir: 'dist-demo',
           rollupOptions: {
             input: {
+              index: fileURLToPath(new URL('./index.html', import.meta.url)),
               preview: fileURLToPath(new URL('./preview.html', import.meta.url)),
               editorOnly: fileURLToPath(new URL('./editor-only.html', import.meta.url))
             }
