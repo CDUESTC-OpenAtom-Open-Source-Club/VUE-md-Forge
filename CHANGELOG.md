@@ -17,6 +17,38 @@
 
 ---
 
+## [0.3.1] - 2026-10-11
+
+issue #6 + issue #5 处理。
+
+### 修复
+
+- **MarkdownSecurity 媒体标签加固**（issue #6）：默认 `DANGEROUS_TAGS` 加入 `video` / `audio` / `source` / `track`。引擎默认 `html: false` 时不可达，但当宿主开启 `html: true` 后，未阻止的 `<video src="..." autoplay muted>` 会作为三方追踪信标 / 带宽消耗者穿透渲染——现在与 pass 2 attribute scrub 一致补齐。`script` / `iframe` 等已有项保持不变。
+- **puppeteer 回归 probe**（`tools/probe-security.cjs`）：13 个用例覆盖默认列表成员、`<video>` / `<audio>` / `<source>` / `<track>` strip、`<script>` / `onerror` / `javascript:` / `_blank rel` 无回归、`dangerousTags: []` 关掉 pass 1、`dangerousTags` 自定义白名单 `video` 场景；跑通后 `13 passed, 0 failed`。
+
+### 新增
+
+- **`MarkdownSecurityOptions`**：`sanitizeRenderedMarkdown(html, options?)` 第二个可选参数。
+  - `dangerousTags?: readonly string[]` —— 覆盖默认列表，传 `[]` 关闭 pass 1，传自定义 list 收缩 / 扩展。
+  - 导出 `DEFAULT_DANGEROUS_TAGS` 给高级消费者做"现有 list + 自家扩展"拼接。
+- **GitHub Pages 自动部署**（issue #5）：`.github/workflows/pages.yml` 监听 main push，run `npm ci && npm run build`，upload `dist-demo` 为 Pages artifact，deploy 到 `https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/`。
+  - `vite.config.ts` demo 模式新增 `base` 字段，默认 `/VUE-md-Forge/`，可用 `BASE_PATH` 环境变量覆盖（迁库或自部署时）。
+  - 启用步骤：仓库 Settings → Pages → Source 选 "GitHub Actions"（首次合并后一次性）。
+- **README 在线演示 badge**：顶部加部署后 URL，方便快速试玩。
+
+### 变更
+
+- `src/index.ts` 多导出 `DEFAULT_DANGEROUS_TAGS` 与 `MarkdownSecurityOptions` 类型。
+- 版本号 `0.3.0` → `0.3.1`（patch bump：默认行为加固 + 文档 / 部署增量）。
+
+### v0.3.1 新增限制
+
+- Pages 首次启用需在仓库 Settings → Pages 手动设 Source = GitHub Actions，README 已注明。
+- `dist-demo/preview.html` 仍引用 Google Fonts CDN；中国大陆访问可能慢，未来 Phase 4 会替换为本地 woff2。
+- `dangerousTags` 自定义仅作用于 pass 1（元素剥离）；pass 2 attribute scrub 始终跑（包括 `on*` 与 `javascript:`）。这是有意为之（即便 `dangerousTags: []` 也保留安全 attribute 防线）。
+
+---
+
 ## [0.3.0] - 2026-10-11
 
 ### 新增
