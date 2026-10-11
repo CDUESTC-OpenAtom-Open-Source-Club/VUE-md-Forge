@@ -396,7 +396,7 @@ await saver.flush();
 
 ## 当前状态
 
-**v0.2.0 · EditorOnly 洛谷式双栏 + markdown-palettes 对齐工具栏就位**
+**v0.3.0 · 导入/导出本地 .md 文件 + 多文件合并 (本地预览版，待拍板)**
 
 ### 已完成 ✅
 
