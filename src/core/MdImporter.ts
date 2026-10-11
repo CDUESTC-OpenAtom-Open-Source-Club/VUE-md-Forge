@@ -8,7 +8,8 @@
  * Pipeline:
  *   File[] → classifyFile (md/image/other) → reject non-md / oversized
  *           → readFileAsText (encoding-detected, UTF-8/GBK) →
- *             mergeMarkdownFiles (single=as-is, multi=`\n\n---\n\n`)
+ *             mergeMarkdownFiles (single=as-is; multi=`<!-- file: … -->` +
+ *             `\n\n---\n\n` joins)
  */
 
 import { decodeWithDetect } from './EncodingDetector';
@@ -94,11 +95,20 @@ export async function importMdFiles(files: File[]): Promise<MdImportResult> {
 
 /**
  * Combine multiple md contents into one document.
- * Single file: as-is. Multi-file: trim trailing whitespace, join with
- * GFM theme break `\n\n---\n\n` (no banner / heading — keeps content clean).
+ *
+ * - 0 files → empty string.
+ * - 1 file → as-is (no banner — opening a single file should look identical
+ *   to opening it directly).
+ * - 2+ files → each file wrapped in an HTML-comment banner
+ *   `<!-- file: name.md --> … <!-- /file -->` (invisible in any markdown
+ *   preview but visible in source view for traceability), joined by the
+ *   GFM theme break `\n\n---\n\n`. Trailing whitespace inside each file
+ *   is trimmed before wrapping so the join produces predictable spacing.
  */
 export function mergeMarkdownFiles(contents: MdFileInput[]): string {
   if (contents.length === 0) return '';
   if (contents.length === 1) return contents[0].text;
-  return contents.map((c) => c.text.trimEnd()).join('\n\n---\n\n');
+  return contents
+    .map((c) => `<!-- file: ${c.name} -->\n\n${c.text.trimEnd()}\n\n<!-- /file -->`)
+    .join('\n\n---\n\n');
 }
