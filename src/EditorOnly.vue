@@ -23,6 +23,8 @@
  *   - F9 fullscreen (browser API) is replaced by the toolbar's fullScreen button
  *   - localStorage draft persistence
  *   - Image paste/drop → mock base64 upload → inline ![]() replacement
+ *   - Open local .md file (toolbar / drop / paste) → replace content
+ *   - Download current content as .md (toolbar)
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
@@ -37,6 +39,8 @@ import {
   faLink,
   faCode,
   faTable,
+  faFolderOpen,
+  faDownload,
   faEye,
   faEyeSlash,
   faExpandArrowsAlt,
@@ -59,6 +63,12 @@ import {
 } from '@/core/DomActions';
 import { attachKeyboardShortcuts } from '@/core/KeyboardShortcuts';
 import { promptAndBuildTable } from '@/core/TableBuilder';
+import {
+  classifyFile,
+  importMdFiles,
+  mergeMarkdownFiles
+} from '@/core/MdImporter';
+import { exportMarkdown } from '@/core/MdExporter';
 
 const engine = new MarkdownEngine();
 const pair = new PairCompleter();
@@ -132,6 +142,7 @@ const textareaRef = useTemplateRef<HTMLTextAreaElement>('textareaRef');
 const overlayRef = useTemplateRef<HTMLElement>('overlayRef');
 const previewRef = useTemplateRef<HTMLElement>('previewRef');
 const gutterRef = useTemplateRef<HTMLElement>('gutterRef');
+const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
 
 const stats = computed(() => {
   const text = content.value;
@@ -524,22 +535,80 @@ function onPaste(e: ClipboardEvent) {
   const files: File[] = [];
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
-    if (item.kind === 'file' && item.type.startsWith('image/')) {
+    if (item.kind === 'file') {
       const f = item.getAsFile();
       if (f) files.push(f);
     }
   }
   if (!files.length) return;
   e.preventDefault();
-  void handleImageFiles(files);
+  // Fan-out: images stay on the base64 mock pipeline; md/text go to MdImporter.
+  const images = files.filter((f) => f.type.startsWith('image/'));
+  const mds = files.filter((f) => classifyFile(f) === 'md');
+  if (images.length) void handleImageFiles(images);
+  if (mds.length) void importMdAndReplace(mds);
 }
+
 function onDrop(e: DragEvent) {
   e.preventDefault();
-  const files: File[] = [];
-  for (const f of Array.from(e.dataTransfer?.files ?? [])) {
-    if (f.type.startsWith('image/')) files.push(f);
+  const files = Array.from(e.dataTransfer?.files ?? []);
+  if (!files.length) return;
+  // Fan-out: images → base64 mock pipeline; md/text → MdImporter.
+  const images = files.filter((f) => f.type.startsWith('image/'));
+  const mds = files.filter((f) => classifyFile(f) === 'md');
+  if (images.length) void handleImageFiles(images);
+  if (mds.length) void importMdAndReplace(mds);
+}
+
+// ── open / save .md ───────────────────────────────────────────────────
+function openFilePicker() {
+  fileInputRef.value?.click();
+}
+
+function exportAsFile() {
+  const filename = exportMarkdown(content.value);
+  flashToast(`已保存为 ${filename}`, 'ok');
+}
+
+async function importMdAndReplace(files: File[]) {
+  const result = await importMdFiles(files);
+  if (result.rejected.length) {
+    const lines = result.rejected.map((r) => `${r.name}: ${r.reason}`).slice(0, 3);
+    flashToast(`已忽略 ${result.rejected.length} 个文件 (${lines.join('; ')})`, 'warn');
   }
-  if (files.length) void handleImageFiles(files);
+  if (!result.contents.length) return;
+  const summary =
+    result.contents.length === 1
+      ? result.contents[0].name
+      : `${result.contents.length} 个文件 (${result.contents.map((c) => c.name).join(', ')})`;
+  // Confirm gate: avoid wiping an in-progress draft by accident.
+  const el = textareaRef.value;
+  if (el && el.value.length > 0 && content.value.length > 0) {
+    const ok = window.confirm(
+      `当前草稿尚未保存，确定替换为 ${summary} 吗？\n（取消将保留当前内容）`
+    );
+    if (!ok) return;
+  }
+  const merged = mergeMarkdownFiles(result.contents);
+  content.value = merged;
+  if (el) {
+    el.value = merged;
+    el.focus();
+    el.setSelectionRange(0, 0);
+  }
+  flashToast(
+    result.contents.length === 1 ? `已打开 ${summary}` : `已合并 ${result.contents.length} 个文件`,
+    'ok'
+  );
+  scheduleSave();
+}
+
+function onFileInputChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  // Reset so re-picking the same file fires `change` again.
+  input.value = '';
+  if (files.length) void importMdAndReplace(files);
 }
 
 onMounted(() => {
@@ -625,6 +694,12 @@ defineExpose({ scrollToTop });
       </button>
       <button @click="doTable" title="表格" aria-label="表格">
         <FontAwesomeIcon :icon="faTable" />
+      </button>
+      <button @click="openFilePicker" title="打开 .md 文件" aria-label="打开 .md 文件">
+        <FontAwesomeIcon :icon="faFolderOpen" />
+      </button>
+      <button @click="exportAsFile" title="下载为 .md" aria-label="下载为 .md">
+        <FontAwesomeIcon :icon="faDownload" />
       </button>
 
       <span class="eo-sep" />
@@ -733,6 +808,16 @@ defineExpose({ scrollToTop });
         {{ toast.text }}
       </div>
     </Transition>
+
+    <!-- hidden file picker (driven by toolbar 'open .md' button) -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept=".md,.markdown,.mdown,.mkd,text/markdown,text/plain"
+      multiple
+      class="eo-file-input"
+      @change="onFileInputChange"
+    />
   </div>
 </template>
 
@@ -1064,4 +1149,14 @@ defineExpose({ scrollToTop });
 .eo-info-body a { color: var(--mdf-accent, #4183c4); }
 .eo-fade-enter-from, .eo-fade-leave-to { opacity: 0; }
 .eo-fade-enter-active, .eo-fade-leave-active { transition: opacity 0.18s ease; }
+
+/* hidden file input — driven by toolbar 'open .md' button */
+.eo-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+}
 </style>
