@@ -9,6 +9,10 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6)
 ![FontAwesome](https://img.shields.io/badge/FontAwesome-5-528dd7)
 
+> 🟢 **在线演示**：[https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/](https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/)（main 分支每次 push 由 GitHub Actions 自动部署，启用步骤见下方「部署」章节）
+>
+> **首次启用需要仓库管理员在 Settings → Pages → Source 选 "GitHub Actions"**（一次性配置）。
+
 ---
 
 ## 这是什么
@@ -432,6 +436,19 @@ await saver.flush();
 | **v0.3** | IR 即时渲染编辑区 + Toolbar 抽象 + 完整 demo（7 段） | ⏳ |
 | **v0.4** | `npm run build:lib` 出包 + README 完善 + 单元测试 | ⏳ |
 | **v0.5** | 回到 club-web 替换 `md-editor-v3`，解 P1-4 | ⏳ |
+
+## 部署
+
+在线演示通过 **GitHub Pages + Actions 自动部署** 提供，main 分支每次 push 触发：
+
+1. 仓库管理员在 **Settings → Pages → Build and deployment** 把 Source 改为 **"GitHub Actions"**（首次一次性配置）
+2. 之后每次 push main，`/.github/workflows/pages.yml` 会自动：
+   - `npm ci`
+   - `npm run build`（demo 模式 `base: '/VUE-md-Forge/'` 写入产物）
+   - 上传 `dist-demo/` 为 Pages artifact
+   - 部署到 `https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/`
+
+如果仓库改名或自托管（Netlify / Nginx），把 `BASE_PATH=/your-path/ vite build` 即可覆盖默认 base path。
 
 ## 贡献
 
