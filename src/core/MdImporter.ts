@@ -7,9 +7,11 @@
  *
  * Pipeline:
  *   File[] → classifyFile (md/image/other) → reject non-md / oversized
- *           → readFileAsText (UTF-8) → mergeMarkdownFiles (single=as-is,
- *           multi=`\n\n---\n\n`)
+ *           → readFileAsText (encoding-detected, UTF-8/GBK) →
+ *             mergeMarkdownFiles (single=as-is, multi=`\n\n---\n\n`)
  */
+
+import { decodeWithDetect } from './EncodingDetector';
 
 export const MAX_BYTES = 5 * 1024 * 1024; // 5 MB hard cap
 
@@ -44,14 +46,15 @@ export function classifyFile(file: File): FileKind {
   return 'other';
 }
 
-/** Read a file as UTF-8 text. Throws on FileReader error. */
+/**
+ * Read a file as text, picking the encoding via {@link detectEncoding}.
+ * Pipeline: `File.arrayBuffer()` → `Uint8Array` → `decodeWithDetect`.
+ * Throws if `arrayBuffer()` itself fails (FileReader-level error). On
+ * invalid bytes the chosen decoder silently substitutes U+FFFD rather
+ * than throwing.
+ */
 export function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file, 'utf-8');
-  });
+  return file.arrayBuffer().then((buf) => decodeWithDetect(new Uint8Array(buf)));
 }
 
 /**
