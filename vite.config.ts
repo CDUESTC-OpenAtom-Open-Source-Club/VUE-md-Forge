@@ -15,6 +15,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    // GitHub Pages base path; override via BASE_PATH env for custom hosts.
+    // Vite resolves this against all asset / asset-injected paths so the
+    // built HTML works under https://<org>.github.io/VUE-md-Forge/.
+    base: process.env.BASE_PATH ?? '/VUE-md-Forge/',
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))

@@ -1,0 +1,57 @@
+name: GitHub Pages
+
+# Deploy the demo site (preview.html + editor-only.html) to GitHub Pages on
+# every push to main. After the first merge, enable Pages in
+#   Settings → Pages → Source = GitHub Actions
+# so this workflow has somewhere to land. Subsequent pushes auto-deploy.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One concurrent deployment at a time; cancel any in-flight run for the same
+# branch so a fast-following push doesn't queue.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Build demo site
+        # vite.config.ts demo mode defaults `base` to `/VUE-md-Forge/` so the
+        # asset paths resolve at https://<org>.github.io/VUE-md-Forge/.
+        # Override BASE_PATH if the repo is renamed / hosted elsewhere.
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
