@@ -69,6 +69,8 @@ import {
   mergeMarkdownFiles
 } from '@/core/MdImporter';
 import { exportMarkdown } from '@/core/MdExporter';
+import { createDialogService } from '@/core/DialogService';
+import AppDialog from '@/components/AppDialog.vue';
 
 const engine = new MarkdownEngine();
 const pair = new PairCompleter();
@@ -143,6 +145,8 @@ const overlayRef = useTemplateRef<HTMLElement>('overlayRef');
 const previewRef = useTemplateRef<HTMLElement>('previewRef');
 const gutterRef = useTemplateRef<HTMLElement>('gutterRef');
 const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
+
+const dialog = createDialogService();
 
 const stats = computed(() => {
   const text = content.value;
@@ -584,8 +588,10 @@ async function importMdAndReplace(files: File[]) {
   // Confirm gate: avoid wiping an in-progress draft by accident.
   const el = textareaRef.value;
   if (el && el.value.length > 0 && content.value.length > 0) {
-    const ok = window.confirm(
-      `当前草稿尚未保存，确定替换为 ${summary} 吗？\n（取消将保留当前内容）`
+    const ok = await dialog.confirm(
+      '替换当前草稿？',
+      `当前草稿尚未保存，确定替换为 ${summary} 吗？\n（取消将保留当前内容）`,
+      { confirmText: '替换', cancelText: '取消' }
     );
     if (!ok) return;
   }
@@ -818,6 +824,9 @@ defineExpose({ scrollToTop });
       class="eo-file-input"
       @change="onFileInputChange"
     />
+
+    <!-- modal dialog (confirm + prompt) — Teleport to <body> internally -->
+    <AppDialog :service="dialog" />
   </div>
 </template>
 
