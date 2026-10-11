@@ -7,12 +7,22 @@
  *   2. `target="_blank"` links are forced to carry rel="noopener noreferrer"
  *   3. explicit srcset/formaction/xlink coverage
  *
+ * v0.3.1 hardening (issue #6): media tags (`video` / `audio` / `source` /
+ * `track`) added to the default block list. With the engine default
+ * `html: false` this is unreachable, but for hosts that opt-in to raw
+ * HTML rendering a `<video src="..." autoplay muted>` would otherwise
+ * survive sanitisation and act as a third-party tracking beacon /
+ * unwanted bandwidth consumer. The list is exposed via
+ * {@link MarkdownSecurityOptions.dangerousTags} so advanced consumers
+ * can override (e.g. whitelist `video` for a controlled video-hosting
+ * use case).
+ *
  * Deliberately NOT relaxed: `data:image/svg+xml` stays rejected. Inline SVG is a
  * well-known script carrier (`<script>`, `onload=`) and allowing it would be a
  * regression against the club-web baseline.
  */
 
-const DANGEROUS_TAGS = [
+const DEFAULT_DANGEROUS_TAGS = [
   'script',
   'iframe',
   'object',
@@ -23,7 +33,14 @@ const DANGEROUS_TAGS = [
   'meta',
   'link',
   'noscript',
-  'template'
+  'template',
+  // issue #6: strip media tags so `<video>` / `<audio>` (and their
+  // `<source>` / `<track>` children) cannot autoplay + beacon through
+  // raw-HTML rendering.
+  'video',
+  'audio',
+  'source',
+  'track'
 ] as const;
 
 const URL_ATTRS = new Set([
@@ -40,10 +57,26 @@ const URL_ATTRS = new Set([
 
 /** https / http / mailto / tel / root-relative / anchor / dot-relative / raster data URL / blob */
 const SAFE_URL_PATTERN =
-  /^(https?:|mailto:|tel:|\/|#|\.\/|\.\.\/|blob:|data:image\/(?:png|jpe?g|gif|webp);)/i;
+  /^(https?:|mailto:|tel:|\/|\#|\.\/|\.\.\/|blob:|data:image\/(?:png|jpe?g|gif|webp);)/i;
 
 /** Control characters and whitespace used to smuggle `java\nscript:` past naive checks. */
-const CONTROL_CHARS = new RegExp('[\u0000-\u0020\u00a0\u1680\u2000-\u200f\u2028\u2029\u202f\u205f\u3000\ufeff]', 'g');
+const CONTROL_CHARS = /[\u0000- \u00a0\u1680\u2000-\u200f\u2028\u2029\u202f\u205f\u3000\ufeff]/g;
+
+export interface MarkdownSecurityOptions {
+  /**
+   * Override the dangerous-tag block list used in pass 1 (element strip).
+   *
+   * - Omit / leave undefined → use {@link DEFAULT_DANGEROUS_TAGS}.
+   * - Pass an explicit array → that list is used verbatim. Use this to
+   *   *narrow* the block list (e.g. omit `video` to whitelist media) or
+   *   *extend* it (e.g. add a custom element type).
+   * - Pass an empty array → skip the element-strip pass entirely (use
+   *   with care; the attribute pass still runs).
+   *
+   * Read-only arrays of strings are accepted.
+   */
+  dangerousTags?: readonly string[];
+}
 
 function isSafeUrl(value: string): boolean {
   if (!value) return false;
@@ -60,16 +93,23 @@ function isSafeSrcset(value: string): boolean {
   return candidates.length > 0 && candidates.every((candidate) => isSafeUrl(candidate));
 }
 
-export function sanitizeRenderedMarkdown(html: string): string {
+export function sanitizeRenderedMarkdown(
+  html: string,
+  options?: MarkdownSecurityOptions
+): string {
   if (!html || typeof DOMParser === 'undefined') return html || '';
+
+  const dangerousTags = options?.dangerousTags ?? DEFAULT_DANGEROUS_TAGS;
 
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   const body = parsed.body;
 
-  // Pass 1 — drop dangerous elements outright.
-  body.querySelectorAll(DANGEROUS_TAGS.join(',')).forEach((element) => {
-    element.remove();
-  });
+  // Pass 1 — drop dangerous elements outright (skipped when caller passes []).
+  if (dangerousTags.length > 0) {
+    body.querySelectorAll(dangerousTags.join(',')).forEach((element) => {
+      element.remove();
+    });
+  }
 
   // Pass 2 — scrub attributes on everything that survived.
   body.querySelectorAll('*').forEach((element) => {
@@ -114,3 +154,5 @@ export function sanitizeRenderedMarkdown(html: string): string {
 
   return body.innerHTML;
 }
+
+export { DEFAULT_DANGEROUS_TAGS };

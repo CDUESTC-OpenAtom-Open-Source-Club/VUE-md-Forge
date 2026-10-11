@@ -17,7 +17,11 @@ export { default as EditorOnly } from './EditorOnly.vue';
 
 export { MarkdownEngine } from './core/MarkdownEngine';
 export { PairCompleter, PAIRS, type PairContext, type PairResult } from './core/PairCompleter';
-export { sanitizeRenderedMarkdown } from './core/MarkdownSecurity';
+export {
+  sanitizeRenderedMarkdown,
+  DEFAULT_DANGEROUS_TAGS,
+  type MarkdownSecurityOptions
+} from './core/MarkdownSecurity';
 export {
   looksLikeRichClipboard,
   htmlToMarkdown,
