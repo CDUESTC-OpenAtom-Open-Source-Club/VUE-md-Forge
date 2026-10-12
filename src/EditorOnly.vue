@@ -948,6 +948,15 @@ defineExpose({ scrollToTop });
   position: relative;
   min-height: 0;
   display: flex;
+  /* Editor box 高度上下限（行数）—— themes.css 定义 --mdf-editor-min-rows /
+   * --mdf-editor-max-rows 与 --mdf-line-h。
+   * - 空内容时 box = 20 行高度（site 集成到小容器时不被压扁）
+   * - 内容超 60 行时 box 锁 60 行 + overflow:hidden 截留，内部 textarea/
+   *   overlay 的 overflow:auto 接管滚动
+   * 24px = textarea padding-top 12 + padding-bottom 12 */
+  min-height: calc(var(--mdf-editor-min-rows, 20) * var(--mdf-line-h) + 24px);
+  max-height: calc(var(--mdf-editor-max-rows, 60) * var(--mdf-line-h) + 24px);
+  overflow: hidden;
 }
 .eo-overlay, .eo-textarea {
   position: absolute;
