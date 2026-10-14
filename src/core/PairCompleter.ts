@@ -87,6 +87,20 @@ export class PairCompleter {
    *   3. backspace
    */
   process(inputType: string, data: string | null, ctx: PairContext): PairResult {
+    // 防御性：粘贴 / 拖拽 / IME composition / 替换输入 一律不参与配对。
+    // 浏览器原生对这些路径已 fallthrough（inputType 不在下面的 if 分支里），
+    // 但显式早返回声明有三个目的：
+    //   (1) 防未来 SmartPaste 改造产生 insertText-after-paste 的中间事件
+    //   (2) IME commit 触发 insertText 而非 insertFromPaste 时误配对（中文输入法常见）
+    //   (3) spellcheck / autocomplete 的 insertReplacementText 路径绕过配对
+    if (
+      inputType === 'insertFromPaste' ||
+      inputType === 'insertFromDrop' ||
+      inputType === 'insertCompositionText' ||
+      inputType === 'insertReplacementText'
+    ) {
+      return { value: ctx.value, caret: ctx.selectionStart, preventDefault: false };
+    }
     if (inputType === 'insertText' && data && data.length === 1) {
       // Closing char (the caret sits before a matching close char and the
       // user typed it again) wins over the generic opening insert.

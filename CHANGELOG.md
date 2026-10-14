@@ -21,6 +21,15 @@
 - **Pages site 未初始化**（org-level 平台限制）：部分 GitHub org（尤其 Enterprise trial）即便 repo-level Source = GitHub Actions 已保存，`GET /pages` 仍 404，导致 `deploy-pages@v4` 首次报 `Failed to create deployment`。workflow deploy job 前置 `gh api` best-effort 探测 + 创建：`GET /pages` 200 直接跳过；404 调 `POST /pages`（`build_type=workflow` / `source=main//`）尝试自举；权限不足则 `::warning::` 打印「Settings → Pages → Source 临时切 Branch + Save + 切回 Actions + Re-run」三步 UI 操作。
 - **README 顶部 banner 撤回 → 恢复**：合并后 workflow 自举成功（`https://CDUESTC-OpenAtom-Open-Source-Club.github.io/VUE-md-Forge/` HTTP 200，size = `dist-demo/index.html` 4587 B），临时撤掉的 `🟢 在线演示` banner 恢复（指向部署章节）/ 跳转链接。
 
+### 紧急修复（site 集成截图复现）
+
+用户把 `editor-only.html` 嵌入外部网站（顶部 input / 主题切换 / 工具栏 / 状态栏完整布局）截图反馈：editor 区在未输入时只有 1 行高，粘贴 markdown 时对称符号翻倍，预览区代码框复制后整段折成一行，「加粗/斜体复制导致错误换行」肉眼可见。修 4 个 commit（独立可回滚）：
+
+- **box 高度策略：默认 20 行 + 上限 60 行**（`fix(editor)`）。`src/styles/themes.css` 新增 `--mdf-editor-min-rows: 20` / `--mdf-editor-max-rows: 60`（light + dark 两套主题都加）。`src/EditorOnly.vue` `.eo-source-stack` 改 `min-height: calc(min-rows × line-h + 24px)` / `max-height: calc(max-rows × line-h + 24px)` + `overflow: hidden`。空内容时 box 锁 20 行高（≈ 464px）解决「只有 1 行高」；输入超 60 行后 box 锁 1344px，textarea 内部滚动接管（不再撑高页面）。site 集成小容器场景下 box 不再被压缩。
+- **PairCompleter 显式 skip 粘贴 / 拖拽 / IME / 替换输入**（`fix(security)`）。`src/core/PairCompleter.ts` `process()` 入口前加守卫：`insertFromPaste` / `insertFromDrop` / `insertCompositionText` / `insertReplacementText` 一律早返回 fallthrough。理论上前述路径浏览器原生已不夹带替换，但显式声明后未来 SmartPaste / IME commit 等改造不会回归 `**bold**` → `****bold****` 这类翻倍 bug。
+- **预览 `<pre>` 强制不折行 + 源代码 `word-break` 标准化**（`fix(editor)`）。`src/EditorOnly.vue` `.eo-rendered :deep(pre)` 加 `white-space: pre`（长行出横向滚动条，不再被字符级断行截断）。source view 同步把非标准的 `word-break: break-word` 换成 `word-break: normal` + `overflow-wrap: break-word`——CJK 长串仍可字符级断行（`overflow-wrap` 兜底），但 `**` / `_` 等 ASCII token 不再被当强制 word break point，避免「基于这个概念 + **重要特性** + 中文标点」被拆成 2-3 行（这正是用户报告的「加粗 / 斜体复制导致错误换行」的真实链路之一）。
+- **5 个 puppeteer probe 兜底**（`test(editor)`）。`tools/probe-editor-box.cjs`（空内容 box 高度断言 8/8）、`tools/probe-editor-rows.cjs`（80 行触发滚动 + 清空不缩短 4/4）、`tools/probe-pair-paste.cjs`（5 种 markdown 粘贴不变形 5/5）、`tools/probe-pre-wrap.cjs`（preview `<pre>` 横向滚动触发 4/4）、`tools/probe-source-bold-wrap.cjs`（Range API 测 `**xxx**` 不拆字 + 整段同行 3/3），跑通后 `24 passed, 0 failed`。
+
 ---
 
 ## [0.3.1] - 2026-10-11

@@ -948,6 +948,15 @@ defineExpose({ scrollToTop });
   position: relative;
   min-height: 0;
   display: flex;
+  /* Editor box 高度上下限（行数）—— themes.css 定义 --mdf-editor-min-rows /
+   * --mdf-editor-max-rows 与 --mdf-line-h。
+   * - 空内容时 box = 20 行高度（site 集成到小容器时不被压扁）
+   * - 内容超 60 行时 box 锁 60 行 + overflow:hidden 截留，内部 textarea/
+   *   overlay 的 overflow:auto 接管滚动
+   * 24px = textarea padding-top 12 + padding-bottom 12 */
+  min-height: calc(var(--mdf-editor-min-rows, 20) * var(--mdf-line-h) + 24px);
+  max-height: calc(var(--mdf-editor-max-rows, 60) * var(--mdf-line-h) + 24px);
+  overflow: hidden;
 }
 .eo-overlay, .eo-textarea {
   position: absolute;
@@ -967,7 +976,15 @@ defineExpose({ scrollToTop });
   letter-spacing: 0;
   tab-size: 2;
   white-space: pre-wrap;
-  word-break: break-word;
+  /* overflow-wrap: break-word（标准）替代非标准的 word-break: break-word。
+   * 配合 word-break: normal，让 `**` 等 ASCII token 不再被当强制 break point —
+   * 之前 word-break: break-word 把 `基于这个概念...**重要特性**：` 里的 `**`
+   * 当 word boundary，整段换到下一行，导致 source view 「**xxx**」单独成行，
+   * preview 把整段渲染为 block <strong> + 换行（用户报告「加粗/斜体复制换行」）。
+   * 现在 word-break: normal + overflow-wrap: break-word 让 CJK 长串按字符断行，
+   * 但 `**` 等 token 跟随上下文走不被强制换行。 */
+  overflow-wrap: break-word;
+  word-break: normal;
   border: 0;
   outline: 0;
   resize: none;
@@ -1041,7 +1058,19 @@ defineExpose({ scrollToTop });
 .eo-rendered :deep(a) { color: var(--mdf-accent, #4183c4); text-decoration: none; }
 .eo-rendered :deep(a:hover) { text-decoration: underline; }
 .eo-rendered :deep(code) { font-family: var(--mdf-font-mono); background: var(--mdf-code-bg, #f6f8fa); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
-.eo-rendered :deep(pre) { background: var(--mdf-code-bg, #f6f8fa); border: 1px solid var(--mdf-line, #d0d7de); border-radius: 6px; padding: 12px 14px; overflow: auto; font-size: 14px; font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace; line-height: 1.55; }
+.eo-rendered :deep(pre) {
+  background: var(--mdf-code-bg, #f6f8fa);
+  border: 1px solid var(--mdf-line, #d0d7de);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow: auto;
+  /* 长行不折行 —— 用户反馈「代码框复制后折叠」。长行出横向滚动条，
+   * 而不是字符级断行（pre 语义本就是 preformatted，不应该 wrap）。 */
+  white-space: pre;
+  font-size: 14px;
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace;
+  line-height: 1.55;
+}
 .eo-rendered :deep(table) { border-collapse: collapse; margin: 0.8em 0; width: 100%; }
 .eo-rendered :deep(th), .eo-rendered :deep(td) { border: 1px solid var(--mdf-line, #d0d7de); padding: 6px 10px; text-align: left; }
 .eo-rendered :deep(th) { background: var(--mdf-code-bg, #f6f8fa); }
